@@ -1,0 +1,205 @@
+version: "2"
+
+linters:
+  default: all
+  disable:
+    - godox
+  exclusions:
+    warn-unused: true
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - funlen
+  settings:
+    copyloopvar:
+      check-alias: true
+    cyclop:
+      max-complexity: 20
+    decorder:
+      dec-order:
+        - const
+        - var
+        - type
+        - func
+      disable-dec-order-check: false
+      disable-init-func-first-check: false
+      disable-dec-num-check: true
+    depguard:
+      rules:
+        main:
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/get-reginald/reginald
+            - github.com/anttikivi/semver
+            - github.com/chzyer/readline
+            - github.com/go-viper/mapstructure/v2
+            - github.com/pelletier/go-toml/v2
+            - github.com/spf13/pflag
+            - golang.org/x/sync
+            - golang.org/x/term
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    exhaustive:
+      default-case-required: true
+    funcorder:
+      constructor: true
+      struct-method: true
+    funlen:
+      lines: 150
+      statements: 60
+    gochecksumtype:
+      default-signifies-exhaustive: false
+      include-shared-interfaces: false
+    gocognit:
+      min-complexity: 30
+    goconst:
+      find-duplicates: true
+      eval-const-expressions: true
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - commentedOutCode
+        - unnamedResult
+        - whyNoLint
+    govet:
+      enable-all: true
+    grouper:
+      import-require-single-import: true
+    iface:
+      enable:
+        - identical
+        - unused
+        - opaque
+    importas:
+      no-extra-aliases: true
+    interfacebloat:
+      max: 5
+    loggercheck:
+      slog: true
+      rules:
+        - github.com/get-reginald/reginald/internal/logging.Trace
+        - github.com/get-reginald/reginald/internal/logging.Debug
+        - github.com/get-reginald/reginald/internal/logging.Info
+        - github.com/get-reginald/reginald/internal/logging.Warn
+        - github.com/get-reginald/reginald/internal/logging.Error
+    lll:
+      line-length: 120
+      tab-width: 4
+    maintidx:
+      under: 25
+    misspell:
+      locale: US # set locale to keep the spelling consistent
+    musttag:
+      functions:
+        - name: (*github.com/pelletier/go-toml/v2.Decoder).Decode
+          tag: toml
+          arg-pos: 0
+    nolintlint:
+      allow-no-explanation:
+        - lll
+        - mnd
+        - varnamelen
+      require-explanation: true
+      require-specific: true
+    nonamedreturns:
+      report-error-in-defer: true
+    perfsprint:
+      err-error: true
+    prealloc:
+      for-loops: true
+    recvcheck:
+      disable-builtin: false
+    revive:
+      severity: error
+      enable-all-rules: true
+      directives:
+        - name: specify-disable-reason
+          severity: error
+      rules:
+        - name: add-constant
+          disabled: true
+        - name: cognitive-complexity
+          disabled: true
+        # This might actually be good, but we have otherwise decided to ban
+        # named returns.
+        - name: confusing-results
+          disabled: true
+        - name: cyclomatic
+          disabled: true
+        - name: flag-parameter
+          disabled: true
+        - name: function-length
+          disabled: true
+        - name: line-length-limit
+          disabled: true
+        - name: max-public-structs
+          disabled: true
+        - name: struct-tag
+          severity: error
+          disabled: false
+          exclude: [""]
+          arguments:
+            - "mapstructure,remain"
+    sloglint:
+      context: "all"
+      static-msg: true
+      msg-style: lowercased
+      key-naming-case: "camel" # normal logging output is JSON
+      forbidden-keys:
+        - time
+        - level
+        - msg
+        - source
+    staticcheck:
+      dot-import-whitelist: []
+      http-status-code-whitelist: []
+      checks:
+        - all
+    tagalign:
+      align: false
+      sort: true
+    tagliatelle:
+      case:
+        rules:
+          json: camel
+    testpackage:
+      allow-packages: []
+    usestdlibvars:
+      time-month: true
+      time-layout: true
+      crypto-hash: true
+      default-rpc-path: true
+      sql-isolation-level: true
+      tls-signature-scheme: true
+      constant-kind: true
+    usetesting:
+      os-temp-dir: true
+    unconvert:
+      fast-math: true
+    unparam:
+      check-exported: true
+    unused:
+      field-writes-are-uses: false
+      exported-fields-are-used: false
+      local-variables-are-used: false
+    varnamelen:
+      max-distance: 50
+    wsl:
+      force-err-cuddling: true
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+    - golines
+  settings:
+    golines:
+      chain-split-dots: false
+      max-len: 120
+      reformat-tags: false
+      tab-len: 4
