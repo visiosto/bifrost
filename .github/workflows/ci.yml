@@ -47,7 +47,6 @@ jobs:
           - { goos: "linux", goarch: "arm64", os: "ubuntu-24.04-arm" }
           - { goos: "linux", goarch: "arm64", os: "ubuntu-22.04-arm" }
           - { goos: "darwin", goarch: "amd64", os: "macos-15-intel" }
-          - { goos: "darwin", goarch: "amd64", os: "macos-13" }
           - { goos: "darwin", goarch: "arm64", os: "macos-26" }
           - { goos: "darwin", goarch: "arm64", os: "macos-15" }
           - { goos: "darwin", goarch: "arm64", os: "macos-14" }
@@ -70,7 +69,7 @@ jobs:
         os:
           - ubuntu-22.04
           - ubuntu-22.04-arm
-          - macos-13
+          - macos-15-intel
           - macos-15
           - windows-2022
           - windows-11-arm
