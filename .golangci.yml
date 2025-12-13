@@ -31,14 +31,8 @@ linters:
           list-mode: strict
           allow:
             - $gostd
-            - github.com/get-reginald/reginald
             - github.com/anttikivi/semver
-            - github.com/chzyer/readline
-            - github.com/go-viper/mapstructure/v2
-            - github.com/pelletier/go-toml/v2
-            - github.com/spf13/pflag
-            - golang.org/x/sync
-            - golang.org/x/term
+            - github.com/visiosto/bifrost
     errcheck:
       check-type-assertions: true
       check-blank: true
@@ -79,12 +73,6 @@ linters:
       max: 5
     loggercheck:
       slog: true
-      rules:
-        - github.com/get-reginald/reginald/internal/logging.Trace
-        - github.com/get-reginald/reginald/internal/logging.Debug
-        - github.com/get-reginald/reginald/internal/logging.Info
-        - github.com/get-reginald/reginald/internal/logging.Warn
-        - github.com/get-reginald/reginald/internal/logging.Error
     lll:
       line-length: 120
       tab-width: 4

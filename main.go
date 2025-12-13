@@ -18,10 +18,44 @@ Bifröst is a tool.
 package main
 
 import (
+	_ "embed"
+	"flag"
 	"fmt"
+	"log"
 	"os"
+	"strings"
+
+	"github.com/visiosto/bifrost/internal/config"
+	"github.com/visiosto/bifrost/internal/version"
 )
 
+//go:embed VERSION
+var versionFile string
+
+func init() { //nolint:gochecknoinits // initializes the version information
+	version.Init(strings.Trim(versionFile, " \t\n"))
+}
+
 func main() {
-	_, _ = fmt.Fprintln(os.Stdout, "Hello, world!")
+	if len(os.Args) > 1 {
+		if os.Args[1] == "version" {
+			_, err := fmt.Fprintf(os.Stdout, "bifrost version %s\n", version.Version())
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			return
+		}
+	}
+
+	cfgPath := flag.String("config", "/etc/bifrost.json", "path to the config file")
+
+	flag.Parse()
+
+	cfg, err := config.Load(*cfgPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_ = cfg
 }
