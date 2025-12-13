@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/visiosto/bifrost/internal/config"
+	"github.com/visiosto/bifrost/internal/server"
 	"github.com/visiosto/bifrost/internal/version"
 )
 
@@ -74,4 +75,6 @@ func main() {
 			}),
 		),
 	)
+
+	_ = server.New(cfg)
 }

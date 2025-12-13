@@ -29,11 +29,20 @@ import (
 type Config struct {
 	// ListenAddr is the address the program's server should bind to.
 	ListenAddr string     `json:"listenAddr"`
+	Modules    Modules    `json:"modules"`
 	LogLevel   slog.Level `json:"logLevel"` // defaults to 0 which is info
 
 	// MaxBody is the default maximum size of the message body in bytes.
-	MaxBody int `json:"maxBytes"`
+	MaxBody int64 `json:"maxBytes"`
 }
+
+// Modules is the config for the different activated modules.
+type Modules struct {
+	Email []EmailModule `json:"email"`
+}
+
+// EmailModule is the config for an email module in the modules config.
+type EmailModule struct{}
 
 // Load loads the config from the config file at the given path.
 func Load(path string) (*Config, error) {
