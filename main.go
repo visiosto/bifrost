@@ -12,8 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+Bifröst is a tool.
+*/
 package main
 
+import (
+	"fmt"
+	"os"
+)
+
 func main() {
-	println("Hello, world!")
+	_, _ = fmt.Fprintln(os.Stdout, "Hello, world!")
 }

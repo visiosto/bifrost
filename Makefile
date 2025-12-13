@@ -1,16 +1,9 @@
 .POSIX:
 .SUFFIXES:
 
-GO = go
 GOFLAGS =
 
-VERSION =
-OUTPUT =
-
-TOOLFLAGS =
-
 ADDLICENSE_VERSION = 1.2.0
-DELVE_VERSION = 1.25.2
 GCI_VERSION = 0.13.7
 GO_LICENSES_VERSION = 2.0.1
 GOFUMPT_VERSION = 0.9.2
@@ -20,74 +13,93 @@ GOLINES_VERSION = 0.13.0
 ALLOWED_LICENSES = Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT
 COPYRIGHT_HOLDER = Visiosto oy
 LICENSE = apache
-ADDLICENSE_PATTERNS = *.go
+ADDLICENSE_PATTERNS = *.go internal
 
 GO_MODULE = github.com/visiosto/bifrost
 
 RM = rm -f
 
-# Default target.
+# Default target
 all: bifrost
 
 # CODE QUALITY & CHECKS
 
-audit: license-check test lint
-	golangci-lint config verify
-	"$(GO)" mod tidy -diff
-	"$(GO)" mod verify
+audit: FORCE bin/golangci-lint license-check test lint
+	./bin/golangci-lint config verify
+	go mod tidy -diff
+	go mod verify
 
-license-check: go-licenses
-	"$(GO)" mod verify
-	"$(GO)" mod download
-	go-licenses check --include_tests $(GO_MODULE)/... --allowed_licenses="$(ALLOWED_LICENSES)"
+license-check: FORCE bin/go-licenses
+	go mod verify
+	go mod download
+	./bin/go-licenses check --include_tests $(GO_MODULE)/... --allowed_licenses="$(ALLOWED_LICENSES)"
 
-lint: addlicense golangci-lint
-	addlicense -check -c "$(COPYRIGHT_HOLDER)" -l "$(LICENSE)" $(ADDLICENSE_PATTERNS)
-	golangci-lint run
+lint: FORCE bin/addlicense bin/golangci-lint
+	./bin/addlicense -check -c "$(COPYRIGHT_HOLDER)" -l "$(LICENSE)" $(ADDLICENSE_PATTERNS)
+	./bin/golangci-lint run
 
 test: FORCE
-	"$(GO)" test $(GOFLAGS) ./...
+	go test $(GOFLAGS) ./...
 
 # DEVELOPMENT & BUILDING
 
-tidy: addlicense gci gofumpt golines
-	addlicense -v -c "$(COPYRIGHT_HOLDER)" -l "$(LICENSE)" $(ADDLICENSE_PATTERNS)
-	"$(GO)" mod tidy -v
-	gci write .
-	golines -m 120 -t 4 --no-chain-split-dots --no-reformat-tags -w .
-	gofumpt -extra -l -w .
+tidy: FORCE bin/addlicense bin/gci bin/gofumpt bin/golines
+	./bin/addlicense -v -c "$(COPYRIGHT_HOLDER)" -l "$(LICENSE)" $(ADDLICENSE_PATTERNS)
+	go mod tidy -v
+	./bin/gci write .
+	./bin/golines -m 120 -t 4 --no-chain-split-dots --no-reformat-tags -w .
+	./bin/gofumpt -extra -l -w .
 
-bifrost: FORCE buildtask
-	@./buildtask $@
-
-build: bifrost
+build: FORCE
+	go build $(GOFLAGS) -o bifrost$$(go env GOEXE) .
 
 clean: FORCE
-	@exe=""; \
-	\
-	case "$$("$(GO)" env GOOS)" in \
-		windows) exe=".exe";; \
-	esac; \
-	\
-	output="$(OUTPUT)"; \
-	\
-	if [ -z "$${output}" ]; then \
-		output="bifrost$${exe}"; \
-	fi; \
-	\
-	$(RM) "$${output}"
-	@$(RM) -r bin
+	rm -f bifrost$$(go env GOEXE)
+	rm -rf bin
 
-# TOOL HELPERS
+# TOOL INSTALLS
 
-addlicense delve gci go-licenses gofumpt golangci-lint golines: FORCE installer
-	@./installer $@ $(TOOLFLAGS)
+bin/addlicense: bin/vendor/addlicense-$(ADDLICENSE_VERSION)
+	ln -sf vendor/addlicense-$(ADDLICENSE_VERSION) $@
+bin/vendor/addlicense-$(ADDLICENSE_VERSION):
+	mkdir -p bin/vendor
+	GOBIN="$(PWD)/bin/vendor" go install github.com/google/addlicense@v$(ADDLICENSE_VERSION)
+	mv bin/vendor/addlicense $@
 
-buildtask: scripts/buildtask/script.go
-	"$(GO)" build -o $@ -tags script $<
+bin/gci: bin/vendor/gci-$(GCI_VERSION)
+	ln -sf vendor/gci-$(GCI_VERSION) $@
+bin/vendor/gci-$(GCI_VERSION):
+	mkdir -p bin/vendor
+	GOBIN="$(PWD)/bin/vendor" go install github.com/daixiang0/gci@v$(GCI_VERSION)
+	mv bin/vendor/gci $@
 
-installer: scripts/installer/script.go
-	"$(GO)" build -o $@ -tags script $<
+bin/go-licenses: bin/vendor/go-licenses-$(GO_LICENSES_VERSION)
+	ln -sf vendor/go-licenses-$(GO_LICENSES_VERSION) $@
+bin/vendor/go-licenses-$(GO_LICENSES_VERSION):
+	mkdir -p bin/vendor
+	GOBIN="$(PWD)/bin/vendor" go install github.com/google/go-licenses/v2@v$(GO_LICENSES_VERSION)
+	mv bin/vendor/go-licenses $@
+
+bin/gofumpt: bin/vendor/gofumpt-$(GOFUMPT_VERSION)
+	ln -sf vendor/gofumpt-$(GOFUMPT_VERSION) $@
+bin/vendor/gofumpt-$(GOFUMPT_VERSION):
+	mkdir -p bin/vendor
+	GOBIN="$(PWD)/bin/vendor" go install mvdan.cc/gofumpt@v$(GOFUMPT_VERSION)
+	mv bin/vendor/gofumpt $@
+
+bin/golangci-lint: bin/vendor/golangci-lint-$(GOLANGCI_LINT_VERSION)
+	ln -sf vendor/golangci-lint-$(GOLANGCI_LINT_VERSION) $@
+bin/vendor/golangci-lint-$(GOLANGCI_LINT_VERSION):
+	mkdir -p bin/vendor
+	GOBIN="$(PWD)/bin/vendor" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$(GOLANGCI_LINT_VERSION)
+	mv bin/vendor/golangci-lint $@
+
+bin/golines: bin/vendor/golines-$(GOLINES_VERSION)
+	ln -sf vendor/golines-$(GOLINES_VERSION) $@
+bin/vendor/golines-$(GOLINES_VERSION):
+	mkdir -p bin/vendor
+	GOBIN="$(PWD)/bin/vendor" go install github.com/segmentio/golines@v$(GOLINES_VERSION)
+	mv bin/vendor/golines $@
 
 # SPECIAL TARGET
 

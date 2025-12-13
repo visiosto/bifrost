@@ -1,6 +1,4 @@
+bin/
+
 /bifrost
 /bifrost.exe
-/buildtask
-/buildtask.exe
-/installer
-/installer.exe
