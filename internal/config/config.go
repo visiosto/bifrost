@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
@@ -27,7 +28,8 @@ import (
 // overrides from the command line.
 type Config struct {
 	// ListenAddr is the address the program's server should bind to.
-	ListenAddr string `json:"listenAddr"`
+	ListenAddr string     `json:"listenAddr"`
+	LogLevel   slog.Level `json:"logLevel"` // defaults to 0 which is info
 
 	// MaxBody is the default maximum size of the message body in bytes.
 	MaxBody int `json:"maxBytes"`

@@ -22,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -49,6 +50,7 @@ func main() {
 	}
 
 	cfgPath := flag.String("config", "/etc/bifrost.json", "path to the config file")
+	logLevelName := flag.String("log-level", "", "log only messages with the given severity or more")
 
 	flag.Parse()
 
@@ -57,5 +59,19 @@ func main() {
 		log.Fatal(err)
 	}
 
-	_ = cfg
+	if *logLevelName != "" {
+		err = cfg.LogLevel.UnmarshalText([]byte(*logLevelName))
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	slog.SetDefault(
+		slog.New(
+			slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{ //nolint:exhaustruct // no need for value
+				AddSource: false,
+				Level:     cfg.LogLevel,
+			}),
+		),
+	)
 }
