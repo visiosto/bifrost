@@ -39,7 +39,6 @@ all: bifrost
 # CODE QUALITY & CHECKS
 
 audit: FORCE bin/golangci-lint license-check test lint
-	./bin/golangci-lint config verify
 	go mod tidy -diff
 	go mod verify
 
@@ -50,6 +49,7 @@ license-check: FORCE bin/go-licenses
 
 lint: FORCE bin/addlicense bin/golangci-lint
 	./bin/addlicense -check -c "$(COPYRIGHT_HOLDER)" -l "$(LICENSE)" $(ADDLICENSE_PATTERNS)
+	./bin/golangci-lint config verify
 	./bin/golangci-lint run
 
 test: FORCE

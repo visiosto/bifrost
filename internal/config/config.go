@@ -28,21 +28,25 @@ import (
 // overrides from the command line.
 type Config struct {
 	// ListenAddr is the address the program's server should bind to.
-	ListenAddr string     `json:"listenAddr"`
-	Modules    Modules    `json:"modules"`
+	ListenAddr string     `json:"listenAddress"`
+	Sites      []Site     `json:"sites"`
 	LogLevel   slog.Level `json:"logLevel"` // defaults to 0 which is info
 
 	// MaxBody is the default maximum size of the message body in bytes.
 	MaxBody int64 `json:"maxBytes"`
 }
 
-// Modules is the config for the different activated modules.
-type Modules struct {
-	Email []EmailModule `json:"email"`
+// Site is the config for a site registered to Bifröst.
+type Site struct {
+	ID    string `json:"id"`
+	Token string `json:"token"`
+	Forms []Form `json:"forms"`
 }
 
-// EmailModule is the config for an email module in the modules config.
-type EmailModule struct{}
+// Form is the config of a form in a site.
+type Form struct {
+	ID string `json:"id"`
+}
 
 // Load loads the config from the config file at the given path.
 func Load(path string) (*Config, error) {
