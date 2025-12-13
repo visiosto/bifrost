@@ -13,18 +13,22 @@
 // limitations under the License.
 
 /*
-Bifröst is a tool.
+Bifröst is a request-to-action backend for a fleet of static websites.
 */
 package main
 
 import (
+	"context"
 	_ "embed"
 	"flag"
 	"fmt"
 	"log"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/visiosto/bifrost/internal/config"
 	"github.com/visiosto/bifrost/internal/server"
@@ -39,6 +43,8 @@ func init() { //nolint:gochecknoinits // initializes the version information
 }
 
 func main() {
+	ctx := context.Background()
+
 	if len(os.Args) > 1 {
 		if os.Args[1] == "version" {
 			_, err := fmt.Fprintf(os.Stdout, "bifrost version %s\n", version.Version())
@@ -76,5 +82,32 @@ func main() {
 		),
 	)
 
-	_ = server.New(cfg)
+	srv := server.New(ctx, cfg)
+	errCh := make(chan error, 1)
+
+	go func() {
+		slog.InfoContext(ctx, "running the server")
+
+		errCh <- srv.Run()
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case sig := <-sigCh:
+		slog.InfoContext(ctx, "signal received", "signal", sig.String())
+	case err = <-errCh:
+		slog.ErrorContext(ctx, "server stopped", "error", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second) //nolint:mnd
+	defer cancel()
+
+	err = srv.Shutdown(ctx)
+	if err != nil {
+		log.Fatal(err) //nolint:gocritic // we don't care about the cancel just now
+	}
+
+	slog.InfoContext(ctx, "shutdown complete")
 }

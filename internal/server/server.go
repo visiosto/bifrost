@@ -16,11 +16,17 @@
 package server
 
 import (
+	"context"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/visiosto/bifrost/internal/config"
+	"github.com/visiosto/bifrost/internal/server/handlers"
 )
+
+const apiPrefix = "/v1"
 
 // Server contains the HTTP server and the configured modules.
 type Server struct {
@@ -28,10 +34,24 @@ type Server struct {
 }
 
 // New allocates and returns a new Server.
-func New(cfg *config.Config) *Server {
+func New(ctx context.Context, cfg *config.Config) *Server {
 	mux := http.NewServeMux()
 
-	handler := http.MaxBytesHandler(mux, cfg.MaxBody)
+	for _, site := range cfg.Sites {
+		slog.DebugContext(ctx, "registering handlers for site", "site", site.ID)
+
+		for _, form := range site.Forms {
+			path := apiPrefix + "/forms/" + site.ID + "/" + form.ID
+
+			slog.DebugContext(ctx, "registering handler for form", "site", site.ID, "form", form.ID, "path", path)
+
+			mux.Handle("POST "+path, handlers.SubmitForm(site, form))
+			mux.Handle("OPTIONS "+path, handlers.FormPreflight())
+		}
+	}
+
+	handler := handler(mux, cfg)
+	mux.Handle("POST /", handler)
 	httpServer := &http.Server{ //nolint:exhaustruct // use defaults
 		Addr:              cfg.ListenAddr,
 		Handler:           handler,
@@ -44,4 +64,24 @@ func New(cfg *config.Config) *Server {
 	return &Server{
 		HTTPServer: httpServer,
 	}
+}
+
+// Run runs the server.
+func (s *Server) Run() error {
+	err := s.HTTPServer.ListenAndServe()
+	if err != nil {
+		return fmt.Errorf("unexpected error in server: %w", err)
+	}
+
+	return nil
+}
+
+// Shutdown tries to shut down the server gracefully.
+func (s *Server) Shutdown(ctx context.Context) error {
+	err := s.HTTPServer.Shutdown(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to shut down the server: %w", err)
+	}
+
+	return nil
 }
