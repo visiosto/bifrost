@@ -33,6 +33,8 @@ const (
 	ctxKeySite
 )
 
+const siteTokenHeader = "X-Bifrost-Token" // #nosec G101 -- This is a false positive
+
 type ctxKey int
 
 type responseWriter struct {
@@ -48,6 +50,7 @@ func (w *responseWriter) WriteHeader(statusCode int) {
 
 func withMiddleware(h http.Handler, cfg *config.Config, l *fixedWindowLimiter, paths map[string]pathInfo) http.Handler {
 	h = rateLimit(h, l)
+	h = verifyToken(h, paths)
 	h = corsByPath(h, paths)
 	h = pathContext(h, paths)
 	h = accessLogger(h)
@@ -181,6 +184,50 @@ func corsByPath(h http.Handler, paths map[string]pathInfo) http.Handler {
 
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Vary", "Origin")
+
+		h.ServeHTTP(w, r)
+	})
+}
+
+func verifyToken(h http.Handler, paths map[string]pathInfo) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		// TODO: Come back to this and clean up the if statement after we have
+		// had some real-world requests. We should see out what kind of shape to
+		// expect from the legitimate paths we get.
+		if path == "" || path == "/" || !strings.HasPrefix(path, "/") {
+			http.Error(w, "Not Found", http.StatusNotFound)
+
+			return
+		}
+
+		info, ok := paths[path]
+		if !ok {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+
+			return
+		}
+
+		if info.token == "" {
+			h.ServeHTTP(w, r)
+
+			return
+		}
+
+		token := r.Header.Get(siteTokenHeader)
+		if token == "" {
+			w.Header().Set("WWW-Authenticate", siteTokenHeader)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+
+			return
+		}
+
+		if token != info.token {
+			w.Header().Set("WWW-Authenticate", siteTokenHeader)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+
+			return
+		}
 
 		h.ServeHTTP(w, r)
 	})

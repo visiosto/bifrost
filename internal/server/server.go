@@ -35,6 +35,7 @@ type Server struct {
 
 type pathInfo struct {
 	site           string
+	token          string
 	allowedOrigins []string
 }
 
@@ -49,7 +50,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 	paths := make(map[string]pathInfo)
 	mux := http.NewServeMux()
 
-	paths["/health"] = pathInfo{site: "_", allowedOrigins: []string{"*"}}
+	paths["/health"] = pathInfo{site: "_", token: "", allowedOrigins: []string{"*"}}
 
 	mux.Handle("/health", handlers.Health())
 
@@ -61,7 +62,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 
 			slog.DebugContext(ctx, "registering handler for form", "site", site.ID, "form", form.ID, "path", path)
 
-			paths[path] = pathInfo{site: site.ID, allowedOrigins: site.AllowedOrigins}
+			paths[path] = pathInfo{site: site.ID, token: site.Token, allowedOrigins: site.AllowedOrigins}
 
 			mux.Handle("POST "+path, handlers.SubmitForm(&site, &form))
 			mux.Handle("OPTIONS "+path, handlers.FormPreflight())
