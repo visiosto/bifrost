@@ -57,6 +57,7 @@ func main() {
 	}
 
 	cfgPath := flag.String("config", "/etc/bifrost.json", "path to the config file")
+	listenAddr := flag.String("listen-address", "", "bind the server to the given address")
 	logLevelName := flag.String("log-level", "", "log only messages with the given severity or more")
 
 	flag.Parse()
@@ -64,6 +65,10 @@ func main() {
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if *listenAddr != "" {
+		cfg.ListenAddr = *listenAddr
 	}
 
 	if *logLevelName != "" {
