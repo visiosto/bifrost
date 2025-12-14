@@ -47,13 +47,13 @@ func (w *responseWriter) WriteHeader(statusCode int) {
 }
 
 func withMiddleware(h http.Handler, cfg *config.Config, l *fixedWindowLimiter, paths map[string]pathInfo) http.Handler {
-	h = recoverer(h)
-	h = requestID(h)
-	h = accessLogger(h)
-	h = resolveSite(h, paths)
-	h = corsByPath(h, paths)
 	h = rateLimit(h, l)
+	h = corsByPath(h, paths)
+	h = pathContext(h, paths)
+	h = accessLogger(h)
+	h = requestID(h)
 	h = http.MaxBytesHandler(h, cfg.MaxBody)
+	h = recoverer(h)
 
 	return h
 }
@@ -122,10 +122,16 @@ func accessLogger(h http.Handler) http.Handler {
 	})
 }
 
-func resolveSite(h http.Handler, paths map[string]pathInfo) http.Handler {
+func pathContext(h http.Handler, paths map[string]pathInfo) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		info, ok := paths[r.URL.Path]
-		if !ok || info.site == "" {
+		if !ok {
+			http.Error(w, "Not Found", http.StatusNotFound)
+
+			return
+		}
+
+		if info.site == "" {
 			slog.WarnContext(r.Context(), "failed to assign site to context", "path", r.URL.Path)
 			h.ServeHTTP(w, r)
 
@@ -151,13 +157,6 @@ func corsByPath(h http.Handler, paths map[string]pathInfo) http.Handler {
 			return
 		}
 
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			http.Error(w, "Forbidden", http.StatusForbidden)
-
-			return
-		}
-
 		info, ok := paths[path]
 		if !ok {
 			http.Error(w, "Forbidden", http.StatusForbidden)
@@ -165,7 +164,16 @@ func corsByPath(h http.Handler, paths map[string]pathInfo) http.Handler {
 			return
 		}
 
-		if !slices.Contains(info.allowedOrigins, origin) {
+		wildcard := slices.Contains(info.allowedOrigins, "*")
+
+		origin := r.Header.Get("Origin")
+		if origin == "" && !wildcard {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+
+			return
+		}
+
+		if !wildcard && !slices.Contains(info.allowedOrigins, origin) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 
 			return

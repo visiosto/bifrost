@@ -49,6 +49,8 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 	paths := make(map[string]pathInfo)
 	mux := http.NewServeMux()
 
+	paths["/health"] = pathInfo{site: "_", allowedOrigins: []string{"*"}}
+
 	mux.Handle("/health", handlers.Health())
 
 	for _, site := range cfg.Sites {
