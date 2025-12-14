@@ -18,11 +18,14 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 )
+
+var errConfig = errors.New("invalid config")
 
 // Config is the program representation of the config file and the option
 // overrides from the command line.
@@ -52,7 +55,22 @@ type Site struct {
 
 // Form is the config of a form in a site.
 type Form struct {
-	ID string `json:"id"`
+	ID            string          `json:"id"`
+	Token         string          `json:"token"`
+	SMTPNotifiers []*SMTPNotifier `json:"smtp"`
+}
+
+// SMTPNotifier is the config for a SMTP form notifier.
+type SMTPNotifier struct {
+	From           string `json:"from"`
+	To             string `json:"to"`
+	SubjectPrefix  string `json:"subjectPrefix"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	UsernameEnvVar string `json:"usernameEnv"`
+	PasswordEnvVar string `json:"passwordEnv"`
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
 }
 
 // Load loads the config from the config file at the given path.
@@ -73,7 +91,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to decode config file: %w", err)
 	}
 
-	err = validate()
+	err = cfg.validate()
 	if err != nil {
 		return nil, err
 	}
@@ -81,6 +99,86 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func validate() error {
+func (c *Config) validate() error {
+	if c.ListenAddr == "" {
+		return fmt.Errorf("%w: empty listenAddress", errConfig)
+	}
+
+	if c.MaxBody <= 0 {
+		return fmt.Errorf("%w: maxBytes must be greater than zero", errConfig)
+	}
+
+	if c.RateLimit.PerIPSiteMinute <= 0 {
+		return fmt.Errorf("%w: global rate limit perIpSiteMinute must be greater than zero", errConfig)
+	}
+
+	seenIDs := map[string]struct{}{}
+
+	for _, site := range c.Sites {
+		if site.ID == "" {
+			return fmt.Errorf("%w: empty site ID", errConfig)
+		}
+
+		if site.ID == "_" {
+			return fmt.Errorf("%w: use of reserved site ID %q", errConfig, "_")
+		}
+
+		if _, ok := seenIDs[site.ID]; ok {
+			return fmt.Errorf("%w: duplicate site ID %q", errConfig, site.ID)
+		}
+
+		seenIDs[site.ID] = struct{}{}
+
+		if site.Token == "" {
+			return fmt.Errorf("%w: empty site token", errConfig)
+		}
+
+		if len(site.AllowedOrigins) == 0 {
+			return fmt.Errorf("%w: no allowed origins for site %q", errConfig, site.ID)
+		}
+
+		for _, form := range site.Forms {
+			err := form.validate()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (f *Form) validate() error {
+	// TODO: By default, we do not require the form token.
+	if f.ID == "" {
+		return fmt.Errorf("%w: empty form ID", errConfig)
+	}
+
+	for _, smtp := range f.SMTPNotifiers {
+		if smtp.From == "" {
+			return fmt.Errorf("%w: empty From address", errConfig)
+		}
+
+		if smtp.To == "" {
+			return fmt.Errorf("%w: empty To address", errConfig)
+		}
+
+		if smtp.Host == "" {
+			return fmt.Errorf("%w: empty SMTP host", errConfig)
+		}
+
+		if smtp.Port <= 0 {
+			return fmt.Errorf("%w: invalid SMTP port %d", errConfig, smtp.Port)
+		}
+
+		if smtp.Username == "" && smtp.UsernameEnvVar == "" {
+			return fmt.Errorf("%w: no SMTP username or environment variable name provided", errConfig)
+		}
+
+		if smtp.Password == "" && smtp.PasswordEnvVar == "" {
+			return fmt.Errorf("%w: no SMTP password or environment variable name provided", errConfig)
+		}
+	}
+
 	return nil
 }
