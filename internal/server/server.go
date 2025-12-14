@@ -40,7 +40,7 @@ type pathInfo struct {
 
 // New allocates and returns a new Server.
 func New(ctx context.Context, cfg *config.Config) (*Server, error) {
-	limiter, err := newFixedWindowLimiter(0, 0)
+	limiter, err := newFixedWindowLimiter(ctx, cfg.RateLimit.PerIPSiteMinute, time.Minute)
 	if err != nil {
 		return nil, err
 	}

@@ -15,8 +15,10 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -35,7 +37,7 @@ type bucket struct {
 	count   int
 }
 
-func newFixedWindowLimiter(limit int, window time.Duration) (*fixedWindowLimiter, error) {
+func newFixedWindowLimiter(ctx context.Context, limit int, window time.Duration) (*fixedWindowLimiter, error) {
 	if limit < 0 {
 		return nil, fmt.Errorf("%w: negative limit", errLimiterConfig)
 	}
@@ -43,6 +45,8 @@ func newFixedWindowLimiter(limit int, window time.Duration) (*fixedWindowLimiter
 	if window < 0 {
 		return nil, fmt.Errorf("%w: negative window", errLimiterConfig)
 	}
+
+	slog.InfoContext(ctx, "new fixed window limiter", "limit", limit, "window", window.String())
 
 	return &fixedWindowLimiter{
 		mu:      sync.Mutex{},

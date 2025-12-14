@@ -31,9 +31,15 @@ type Config struct {
 	ListenAddr string     `json:"listenAddress"`
 	Sites      []Site     `json:"sites"`
 	LogLevel   slog.Level `json:"logLevel"` // defaults to 0 which is info
+	RateLimit  RateLimit  `json:"rateLimit"`
 
 	// MaxBody is the default maximum size of the message body in bytes.
 	MaxBody int64 `json:"maxBytes"`
+}
+
+// RateLimit is the global rate limit config.
+type RateLimit struct {
+	PerIPSiteMinute int `json:"perIpSiteMinute"`
 }
 
 // Site is the config for a site registered to Bifröst.
