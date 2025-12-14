@@ -38,9 +38,10 @@ type Config struct {
 
 // Site is the config for a site registered to Bifröst.
 type Site struct {
-	ID    string `json:"id"`
-	Token string `json:"token"`
-	Forms []Form `json:"forms"`
+	ID             string   `json:"id"`
+	Token          string   `json:"token"`
+	AllowedOrigins []string `json:"allowedOrigins"`
+	Forms          []Form   `json:"forms"`
 }
 
 // Form is the config of a form in a site.

@@ -33,9 +33,23 @@ type Server struct {
 	HTTPServer *http.Server
 }
 
+type pathInfo struct {
+	site           string
+	allowedOrigins []string
+}
+
 // New allocates and returns a new Server.
-func New(ctx context.Context, cfg *config.Config) *Server {
+func New(ctx context.Context, cfg *config.Config) (*Server, error) {
+	limiter, err := newFixedWindowLimiter(0, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	// Map the allowed origins and sites to the created paths.
+	paths := make(map[string]pathInfo)
 	mux := http.NewServeMux()
+
+	mux.Handle("/health", handlers.Health())
 
 	for _, site := range cfg.Sites {
 		slog.DebugContext(ctx, "registering handlers for site", "site", site.ID)
@@ -45,13 +59,14 @@ func New(ctx context.Context, cfg *config.Config) *Server {
 
 			slog.DebugContext(ctx, "registering handler for form", "site", site.ID, "form", form.ID, "path", path)
 
-			mux.Handle("POST "+path, handlers.SubmitForm(site, form))
+			paths[path] = pathInfo{site: site.ID, allowedOrigins: site.AllowedOrigins}
+
+			mux.Handle("POST "+path, handlers.SubmitForm(&site, &form))
 			mux.Handle("OPTIONS "+path, handlers.FormPreflight())
 		}
 	}
 
-	handler := handler(mux, cfg)
-	mux.Handle("POST /", handler)
+	handler := withMiddleware(mux, cfg, limiter, paths)
 	httpServer := &http.Server{ //nolint:exhaustruct // use defaults
 		Addr:              cfg.ListenAddr,
 		Handler:           handler,
@@ -63,7 +78,7 @@ func New(ctx context.Context, cfg *config.Config) *Server {
 
 	return &Server{
 		HTTPServer: httpServer,
-	}
+	}, nil
 }
 
 // Run runs the server.

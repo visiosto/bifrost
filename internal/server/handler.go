@@ -15,15 +15,44 @@
 package server
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
+	"net"
 	"net/http"
+	"slices"
+	"strings"
+	"time"
 
 	"github.com/visiosto/bifrost/internal/config"
 )
 
-func handler(h http.Handler, cfg *config.Config) http.Handler {
+const (
+	ctxKeyRequestID ctxKey = iota
+	ctxKeySite
+)
+
+type ctxKey int
+
+type responseWriter struct {
+	http.ResponseWriter
+
+	status int
+}
+
+func (w *responseWriter) WriteHeader(statusCode int) {
+	w.status = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func withMiddleware(h http.Handler, cfg *config.Config, l *fixedWindowLimiter, paths map[string]pathInfo) http.Handler {
 	h = recoverer(h)
+	h = requestID(h)
 	h = accessLogger(h)
+	h = resolveSite(h, paths)
+	h = corsByPath(h, paths)
+	h = rateLimit(h, l)
 	h = http.MaxBytesHandler(h, cfg.MaxBody)
 
 	return h
@@ -41,9 +70,141 @@ func recoverer(h http.Handler) http.Handler {
 	})
 }
 
+func requestID(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b [16]byte
+
+		_, err := rand.Read(b[:])
+		if err != nil {
+			slog.ErrorContext(r.Context(), "failed to assign a request ID")
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+
+			return
+		}
+
+		id := hex.EncodeToString(b[:])
+		w.Header().Set("X-Request-Id", id)
+		ctx := context.WithValue(r.Context(), ctxKeyRequestID, id)
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 func accessLogger(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h.ServeHTTP(w, r)
-		slog.InfoContext(r.Context(), "HTTP request", "method", r.Method, "path", r.URL.Path)
+		start := time.Now()
+		rw := &responseWriter{ResponseWriter: w, status: 0}
+
+		h.ServeHTTP(rw, r)
+
+		reqID, ok := r.Context().Value(ctxKeyRequestID).(string)
+		if !ok {
+			slog.ErrorContext(r.Context(), "request_id is not a string")
+
+			reqID = "unknown"
+		}
+
+		slog.InfoContext(
+			r.Context(),
+			"HTTP request",
+			"method",
+			r.Method,
+			"path",
+			r.URL.Path,
+			"status",
+			rw.status,
+			"duration_ms",
+			time.Since(start).Milliseconds(),
+			"remote_ip",
+			remoteIP(r),
+			"request_id",
+			reqID,
+		)
 	})
+}
+
+func resolveSite(h http.Handler, paths map[string]pathInfo) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info, ok := paths[r.URL.Path]
+		if !ok || info.site == "" {
+			slog.WarnContext(r.Context(), "failed to assign site to context", "path", r.URL.Path)
+			h.ServeHTTP(w, r)
+
+			return
+		}
+
+		slog.DebugContext(r.Context(), "assigning site", "site", info.site, "path", r.URL.Path)
+
+		ctx := context.WithValue(r.Context(), ctxKeySite, info.site)
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func corsByPath(h http.Handler, paths map[string]pathInfo) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		// TODO: Come back to this and clean up the if statement after we have
+		// had some real-world requests. We should see out what kind of shape to
+		// expect from the legitimate paths we get.
+		if path == "" || path == "/" || !strings.HasPrefix(path, "/") {
+			http.Error(w, "Not Found", http.StatusNotFound)
+
+			return
+		}
+
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+
+			return
+		}
+
+		info, ok := paths[path]
+		if !ok {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+
+			return
+		}
+
+		if !slices.Contains(info.allowedOrigins, origin) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+
+			return
+		}
+
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+
+		h.ServeHTTP(w, r)
+	})
+}
+
+func rateLimit(h http.Handler, l *fixedWindowLimiter) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		site, ok := r.Context().Value(ctxKeySite).(string)
+		if !ok {
+			slog.ErrorContext(r.Context(), "failed to get site from context")
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+
+			return
+		}
+
+		key := site + "|" + remoteIP(r)
+		if !l.allow(key) {
+			slog.WarnContext(r.Context(), "rate limit exceeded", "key", key)
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+
+			return
+		}
+
+		h.ServeHTTP(w, r)
+	})
+}
+
+func remoteIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+
+	return host
 }

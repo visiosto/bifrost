@@ -82,7 +82,11 @@ func main() {
 		),
 	)
 
-	srv := server.New(ctx, cfg)
+	srv, err := server.New(ctx, cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	errCh := make(chan error, 1)
 
 	go func() {

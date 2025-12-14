@@ -34,7 +34,7 @@ func FormPreflight() http.Handler {
 }
 
 // SubmitForm returns a [http.Handler] for a form endpoint.
-func SubmitForm(_ config.Site, _ config.Form) http.Handler {
+func SubmitForm(_ *config.Site, _ *config.Form) http.Handler {
 	return http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 	})
 }
