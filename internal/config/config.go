@@ -55,9 +55,10 @@ type Site struct {
 
 // Form is the config of a form in a site.
 type Form struct {
-	ID            string          `json:"id"`
-	Token         string          `json:"token"`
-	SMTPNotifiers []*SMTPNotifier `json:"smtp"`
+	ID            string               `json:"id"`
+	Token         string               `json:"token"`
+	Fields        map[string]FieldType `json:"fields"`
+	SMTPNotifiers []*SMTPNotifier      `json:"smtp"`
 }
 
 // SMTPNotifier is the config for a SMTP form notifier.
