@@ -21,16 +21,48 @@ import (
 	"strings"
 )
 
+// Form body content types.
+const (
+	ContentJSON ContentType = iota
+)
+
 // Form field types.
 const (
 	FieldBool FieldType = iota
 	FieldString
 )
 
-var errUnknownField = errors.New("unknown form field type")
+var (
+	errUnknownContentType = errors.New("unknown form content type")
+	errUnknownField       = errors.New("unknown form field type")
+)
+
+// ContentType is the type of the request body that the form uses.
+type ContentType int
 
 // FieldType is the type of a form field.
 type FieldType int
+
+// UnmarshalJSON implements [encoding/json.Unmarshaler].
+func (t *ContentType) UnmarshalJSON(data []byte) error {
+	s, err := strconv.Unquote(string(data))
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal form content type: %w", err)
+	}
+
+	return t.parse(s)
+}
+
+func (t *ContentType) parse(s string) error {
+	switch strings.ToLower(s) {
+	case "json":
+		*t = ContentJSON
+	default:
+		return fmt.Errorf("%w: %s", errUnknownContentType, s)
+	}
+
+	return nil
+}
 
 // UnmarshalJSON implements [encoding/json.Unmarshaler].
 func (t *FieldType) UnmarshalJSON(data []byte) error {
@@ -49,7 +81,7 @@ func (t *FieldType) parse(s string) error {
 	case "string":
 		*t = FieldString
 	default:
-		return errUnknownField
+		return fmt.Errorf("%w: %s", errUnknownField, s)
 	}
 
 	return nil

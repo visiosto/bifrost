@@ -59,6 +59,7 @@ type Form struct {
 	Token         string               `json:"token"`
 	Fields        map[string]FieldType `json:"fields"`
 	SMTPNotifiers []*SMTPNotifier      `json:"smtp"`
+	ContentType   ContentType          `json:"contentType"`
 }
 
 // SMTPNotifier is the config for a SMTP form notifier.
