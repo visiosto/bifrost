@@ -175,6 +175,9 @@ linters:
       local-variables-are-used: false
     varnamelen:
       max-distance: 50
+      ignore-decls:
+        - r *http.Request
+        - w http.ResponseWriter
     wsl:
       force-err-cuddling: true
 

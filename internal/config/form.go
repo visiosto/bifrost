@@ -41,7 +41,15 @@ var (
 type ContentType int
 
 // FieldType is the type of a form field.
-type FieldType int
+type FieldType int //nolint:recvcheck // no need to have pointer receiver for all functions
+
+// FormField is the configuration for a single form field.
+type FormField struct {
+	Type     FieldType `json:"type"`
+	Required bool      `json:"required"`
+	Min      int       `json:"min"`
+	Max      int       `json:"max"`
+}
 
 // UnmarshalJSON implements [encoding/json.Unmarshaler].
 func (t *ContentType) UnmarshalJSON(data []byte) error {
@@ -72,6 +80,17 @@ func (t *FieldType) UnmarshalJSON(data []byte) error {
 	}
 
 	return t.parse(s)
+}
+
+func (t FieldType) String() string {
+	switch t {
+	case FieldBool:
+		return "bool"
+	case FieldString:
+		return "string"
+	default:
+		return "invalid-type"
+	}
 }
 
 func (t *FieldType) parse(s string) error {

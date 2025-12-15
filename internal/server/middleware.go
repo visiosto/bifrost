@@ -33,8 +33,6 @@ const (
 	ctxKeySite
 )
 
-const siteTokenHeader = "X-Bifrost-Token" // #nosec G101 -- This is a false positive
-
 type ctxKey int
 
 type responseWriter struct {
@@ -250,10 +248,10 @@ func verifyToken(h http.Handler, paths map[string]pathInfo) http.Handler {
 			return
 		}
 
-		token := r.Header.Get(siteTokenHeader)
+		token := r.Header.Get(config.SiteTokenHeader)
 		if token == "" {
 			slog.WarnContext(r.Context(), "disallow request due to empty token", "path", path)
-			w.Header().Set("WWW-Authenticate", siteTokenHeader)
+			w.Header().Set("WWW-Authenticate", config.SiteTokenHeader)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 
 			return
@@ -261,7 +259,7 @@ func verifyToken(h http.Handler, paths map[string]pathInfo) http.Handler {
 
 		if token != info.token {
 			slog.WarnContext(r.Context(), "disallow request due to invalid token", "token", token, "path", path)
-			w.Header().Set("WWW-Authenticate", siteTokenHeader)
+			w.Header().Set("WWW-Authenticate", config.SiteTokenHeader)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 
 			return

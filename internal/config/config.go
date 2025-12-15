@@ -59,11 +59,12 @@ type Site struct {
 
 // Form is the config of a form in a site.
 type Form struct {
-	ID            string               `json:"id"`
-	Token         string               `json:"token"`
-	Fields        map[string]FieldType `json:"fields"`
-	SMTPNotifiers []*SMTPNotifier      `json:"smtp"`
-	ContentType   ContentType          `json:"contentType"`
+	ID                  string               `json:"id"`
+	Token               string               `json:"token"`
+	Fields              map[string]FormField `json:"fields"`
+	SMTPNotifiers       []*SMTPNotifier      `json:"smtp"`
+	ContentType         ContentType          `json:"contentType"`
+	AccessControlMaxAge int                  `json:"accessControlMaxAge"`
 }
 
 // SMTPNotifier is the config for a SMTP form notifier.
@@ -158,6 +159,20 @@ func (f *Form) validate() error {
 	// TODO: By default, we do not require the form token.
 	if f.ID == "" {
 		return fmt.Errorf("%w: empty form ID", errConfig)
+	}
+
+	if f.AccessControlMaxAge < 0 {
+		return fmt.Errorf("%w: accessControlMaxAge must be at least 0", errConfig)
+	}
+
+	for _, field := range f.Fields {
+		if field.Min < 0 {
+			return fmt.Errorf("%w: min field length must be greater than zero", errConfig)
+		}
+
+		if field.Max < field.Min {
+			return fmt.Errorf("%w: max field length must be greater then the min length", errConfig)
+		}
 	}
 
 	for _, smtp := range f.SMTPNotifiers {
