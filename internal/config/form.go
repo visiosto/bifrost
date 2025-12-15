@@ -47,9 +47,11 @@ type FieldType int //nolint:recvcheck // no need to have pointer receiver for al
 type FormField struct {
 	DisplayName string    `json:"displayName"`
 	Type        FieldType `json:"type"`
-	Required    bool      `json:"required"`
 	Min         int       `json:"min"`
 	Max         int       `json:"max"`
+	Required    bool      `json:"required"`
+	// Hide tells to hide the field from the notifications sent.
+	Hide bool `json:"hide"`
 }
 
 // UnmarshalJSON implements [encoding/json.Unmarshaler].

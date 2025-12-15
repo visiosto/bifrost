@@ -47,12 +47,14 @@ const htmlTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional/
   {{ $fields := .fields }}
   {{range $key, $value := .payload -}}
 	{{ $field := index $fields $key -}}
+	{{ if $field.Hide }}{{ continue }}{{ end }}
 	<h2>{{ if (eq $field.DisplayName "") }}{{ $key }}{{ else }}{{ $field.DisplayName }}{{ end }}</h2>
     <p style="font-size: 14px; line-height: 24px; margin: 16px 0">
 	  {{- $value -}}
     </p>
   {{end -}}
-</html>`
+</html>
+`
 
 type payloadError struct {
 	field   string
