@@ -53,9 +53,14 @@ func withMiddleware(h http.Handler, cfg *config.Config, l *fixedWindowLimiter, p
 	h = verifyToken(h, paths)
 	h = corsByPath(h, paths)
 	h = pathContext(h, paths)
+
+	if cfg.DebugHeaders {
+		h = debugHeaders(h)
+	}
+
 	h = accessLogger(h)
 	h = requestID(h)
-	h = http.MaxBytesHandler(h, cfg.MaxBody)
+	h = http.MaxBytesHandler(h, cfg.MaxBodyBytes)
 	h = recoverer(h)
 
 	return h
@@ -122,6 +127,31 @@ func accessLogger(h http.Handler) http.Handler {
 			"request_id",
 			reqID,
 		)
+	})
+}
+
+func debugHeaders(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqID, ok := r.Context().Value(ctxKeyRequestID).(string)
+		if !ok {
+			slog.ErrorContext(r.Context(), "request_id is not a string")
+
+			reqID = "unknown"
+		}
+
+		slog.DebugContext(
+			r.Context(),
+			"request headers",
+			"method",
+			r.Method,
+			"path",
+			r.URL.Path,
+			"request_id",
+			reqID,
+			"header",
+			r.Header,
+		)
+		h.ServeHTTP(w, r)
 	})
 }
 

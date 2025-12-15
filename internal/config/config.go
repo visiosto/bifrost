@@ -36,8 +36,12 @@ type Config struct {
 	LogLevel   slog.Level `json:"logLevel"` // defaults to 0 which is info
 	RateLimit  RateLimit  `json:"rateLimit"`
 
-	// MaxBody is the default maximum size of the message body in bytes.
-	MaxBody int64 `json:"maxBytes"`
+	// MaxBodyBytes is the default maximum size of the message body in bytes.
+	MaxBodyBytes int64 `json:"maxBodyBytes"`
+
+	// DebugHeaders controls whether to print the request headers to the log.
+	// This should not be turned on except when truly debugging.
+	DebugHeaders bool `json:"debugHeaders"`
 }
 
 // RateLimit is the global rate limit config.
@@ -106,7 +110,7 @@ func (c *Config) validate() error {
 		return fmt.Errorf("%w: empty listenAddress", errConfig)
 	}
 
-	if c.MaxBody <= 0 {
+	if c.MaxBodyBytes <= 0 {
 		return fmt.Errorf("%w: maxBytes must be greater than zero", errConfig)
 	}
 
