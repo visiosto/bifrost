@@ -15,20 +15,55 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	texttemplate "text/template"
 
 	"github.com/visiosto/bifrost/internal/config"
 )
 
+//
+//nolint:lll
+const htmlTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<meta charset="utf-8" />
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<title>{{.subject}}</title>
+<html lang="{{.lang}}">
+  <head></head>
+  <h1>{{.subject}}</h1>
+  {{if (ne .intro "") -}}
+  <p style="font-size: 14px; line-height: 24px; margin: 16px 0">
+	{{- .intro -}}
+  </p>
+  {{end -}}
+  {{ $fields := .fields }}
+  {{range $key, $value := .payload -}}
+	{{ $field := index $fields $key -}}
+	<h2>{{ if (eq $field.DisplayName "") }}{{ $key }}{{ else }}{{ $field.DisplayName }}{{ end }}</h2>
+    <p style="font-size: 14px; line-height: 24px; margin: 16px 0">
+	  {{- $value -}}
+    </p>
+  {{end -}}
+</html>`
+
 type payloadError struct {
 	field   string
 	message string
+}
+
+type smtpTemplate struct {
+	subject *texttemplate.Template
+	intro   *texttemplate.Template
+	html    *template.Template
+	cfg     *config.SMTPNotifier
 }
 
 func (e *payloadError) Error() string {
@@ -56,7 +91,12 @@ func FormPreflight(form *config.Form) http.Handler {
 }
 
 // SubmitForm returns a [http.Handler] for a form endpoint.
-func SubmitForm(site *config.Site, form *config.Form) http.Handler {
+func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) {
+	smtpTmpls, err := createSMTPTemplates(form)
+	if err != nil {
+		return nil, err
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		payload := map[string]any{}
 		dec := json.NewDecoder(r.Body)
@@ -120,6 +160,13 @@ func SubmitForm(site *config.Site, form *config.Form) http.Handler {
 			return
 		}
 
+		err = sendSMTPNotification(w, r, form, smtpTmpls, payload)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
 
 		_, err = w.Write([]byte("accepted"))
@@ -128,7 +175,7 @@ func SubmitForm(site *config.Site, form *config.Form) http.Handler {
 
 			return
 		}
-	})
+	}), nil
 }
 
 //nolint:cyclop,gocognit // let's keep this as one function
@@ -221,6 +268,113 @@ func validatePayload(form *config.Form, payload map[string]any) error {
 			}
 		default:
 			panic(fmt.Sprintf("invalid form field type: %d", v.Type))
+		}
+	}
+
+	return nil
+}
+
+func createSMTPTemplates(form *config.Form) ([]smtpTemplate, error) {
+	result := make([]smtpTemplate, len(form.SMTPNotifiers))
+
+	for i, notifier := range form.SMTPNotifiers {
+		subjTmpl, err := texttemplate.New("subject").Parse(notifier.Subject)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse subject template: %w", err)
+		}
+
+		var introTmpl *texttemplate.Template
+
+		introTmpl, err = texttemplate.New("intro").Parse(notifier.Intro)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse intro template: %w", err)
+		}
+
+		var tmpl *template.Template
+
+		tmpl, err = template.New("html").Parse(htmlTemplate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse HTML template: %w", err)
+		}
+
+		result[i] = smtpTemplate{
+			subject: subjTmpl,
+			intro:   introTmpl,
+			html:    tmpl,
+			cfg:     notifier,
+		}
+	}
+
+	return result, nil
+}
+
+func sendSMTPNotification(
+	w http.ResponseWriter,
+	r *http.Request,
+	form *config.Form,
+	tmpls []smtpTemplate,
+	payload map[string]any,
+) error {
+	for _, tmpl := range tmpls {
+		data := map[string]any{}
+		data["payload"] = payload
+		data["fields"] = form.Fields
+		data["lang"] = tmpl.cfg.Lang
+
+		var subjBuf bytes.Buffer
+
+		err := tmpl.subject.Execute(&subjBuf, data)
+		if err != nil {
+			slog.ErrorContext(
+				r.Context(),
+				"failed to execute subject template",
+				"path",
+				r.URL.Path,
+				"tmpl",
+				tmpl.cfg.Subject,
+				"err",
+				err,
+			)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+
+			return fmt.Errorf("failed to execute subject template: %w", err)
+		}
+
+		data["subject"] = subjBuf.String()
+
+		var introBuf bytes.Buffer
+
+		err = tmpl.intro.Execute(&introBuf, data)
+		if err != nil {
+			slog.ErrorContext(
+				r.Context(),
+				"failed to execute intro template",
+				"path",
+				r.URL.Path,
+				"tmpl",
+				tmpl.cfg.Intro,
+				"err",
+				err,
+			)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+
+			return fmt.Errorf("failed to execute intro template: %w", err)
+		}
+
+		data["intro"] = introBuf.String()
+
+		err = tmpl.html.Execute(os.Stdout, data)
+		if err != nil {
+			slog.ErrorContext(
+				r.Context(),
+				"failed to execute HTML template",
+				"path",
+				r.URL.Path,
+				"err",
+				err,
+			)
+
+			return fmt.Errorf("failed to execute HTML template: %w", err)
 		}
 	}
 

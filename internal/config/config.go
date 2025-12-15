@@ -69,9 +69,17 @@ type Form struct {
 
 // SMTPNotifier is the config for a SMTP form notifier.
 type SMTPNotifier struct {
-	From           string `json:"from"`
-	To             string `json:"to"`
-	SubjectPrefix  string `json:"subjectPrefix"`
+	From string `json:"from"`
+	To   string `json:"to"`
+	Lang string `json:"lang"`
+
+	// Subject is a text template that will be used as the subject of
+	// the notification email.
+	Subject string `json:"subject"`
+
+	// Intro is a text template that will be used as an intro in
+	// the notification email before the form fields.
+	Intro          string `json:"intro"`
 	Username       string `json:"username"`
 	Password       string `json:"password"`
 	UsernameEnvVar string `json:"usernameEnv"`
@@ -182,6 +190,14 @@ func (f *Form) validate() error {
 
 		if smtp.To == "" {
 			return fmt.Errorf("%w: empty To address", errConfig)
+		}
+
+		if smtp.Lang == "" {
+			return fmt.Errorf("%w: empty language for SMTP form notification", errConfig)
+		}
+
+		if smtp.Subject == "" {
+			return fmt.Errorf("%w: empty subject for SMTP form notification", errConfig)
 		}
 
 		if smtp.Host == "" {

@@ -64,7 +64,12 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 
 			paths[path] = pathInfo{site: site.ID, token: site.Token, allowedOrigins: site.AllowedOrigins}
 
-			mux.Handle("POST "+path, handlers.SubmitForm(&site, &form))
+			formHandler, err := handlers.SubmitForm(&site, &form)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create handler for form %q: %w", path, err)
+			}
+
+			mux.Handle("POST "+path, formHandler)
 			mux.Handle("OPTIONS "+path, handlers.FormPreflight(&form))
 		}
 	}

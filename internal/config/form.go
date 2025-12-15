@@ -45,10 +45,11 @@ type FieldType int //nolint:recvcheck // no need to have pointer receiver for al
 
 // FormField is the configuration for a single form field.
 type FormField struct {
-	Type     FieldType `json:"type"`
-	Required bool      `json:"required"`
-	Min      int       `json:"min"`
-	Max      int       `json:"max"`
+	DisplayName string    `json:"displayName"`
+	Type        FieldType `json:"type"`
+	Required    bool      `json:"required"`
+	Min         int       `json:"min"`
+	Max         int       `json:"max"`
 }
 
 // UnmarshalJSON implements [encoding/json.Unmarshaler].
