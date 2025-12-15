@@ -221,6 +221,12 @@ func corsByPath(h http.Handler, paths map[string]pathInfo) http.Handler {
 
 func verifyToken(h http.Handler, paths map[string]pathInfo) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			h.ServeHTTP(w, r)
+
+			return
+		}
+
 		path := r.URL.Path
 		// TODO: Come back to this and clean up the if statement after we have
 		// had some real-world requests. We should see out what kind of shape to
