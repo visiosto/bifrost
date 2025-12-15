@@ -252,6 +252,7 @@ func verifyToken(h http.Handler, paths map[string]pathInfo) http.Handler {
 
 		token := r.Header.Get(siteTokenHeader)
 		if token == "" {
+			slog.WarnContext(r.Context(), "disallow request due to empty token", "path", path)
 			w.Header().Set("WWW-Authenticate", siteTokenHeader)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 
@@ -259,6 +260,7 @@ func verifyToken(h http.Handler, paths map[string]pathInfo) http.Handler {
 		}
 
 		if token != info.token {
+			slog.WarnContext(r.Context(), "disallow request due to invalid token", "token", token, "path", path)
 			w.Header().Set("WWW-Authenticate", siteTokenHeader)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 
