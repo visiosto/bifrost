@@ -32,6 +32,7 @@ linters:
           allow:
             - $gostd
             - github.com/anttikivi/semver
+            - github.com/aws/aws-sdk-go-v2
             - github.com/visiosto/bifrost
     errcheck:
       check-type-assertions: true
@@ -72,6 +73,8 @@ linters:
       alias:
         - pkg: text/template
           alias: texttemplate
+        - pkg: github.com/aws/aws-sdk-go-v2/config
+          alias: awsconfig
     interfacebloat:
       max: 5
     loggercheck:

@@ -16,17 +16,21 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	texttemplate "text/template"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
+	"github.com/aws/aws-sdk-go-v2/service/ses/types"
 	"github.com/visiosto/bifrost/internal/config"
 )
 
@@ -134,12 +138,12 @@ type payloadError struct {
 	message string
 }
 
-type smtpTemplate struct {
+type sesTemplate struct {
 	subject *texttemplate.Template
 	intro   *texttemplate.Template
 	html    *template.Template
 	text    *texttemplate.Template
-	cfg     *config.SMTPNotifier
+	cfg     *config.SESNotifier
 	objs    map[string]*texttemplate.Template
 }
 
@@ -169,7 +173,7 @@ func FormPreflight(form *config.Form) http.Handler {
 
 // SubmitForm returns a [http.Handler] for a form endpoint.
 func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) {
-	smtpTmpls, err := createSMTPTemplates(form)
+	sesTmpls, err := createSMTPTemplates(form)
 	if err != nil {
 		return nil, err
 	}
@@ -253,8 +257,20 @@ func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) {
 			return
 		}
 
-		err = handleSMTPNotifiers(w, r, form, smtpTmpls, payload)
+		err = handleSESNotifiers(w, r, form, sesTmpls, payload)
 		if err != nil {
+			slog.ErrorContext(
+				r.Context(),
+				"failed to send SES notifications",
+				"path",
+				r.URL.Path,
+				"site",
+				site.ID,
+				"form",
+				form.ID,
+				"err",
+				err.Error(),
+			)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 
 			return
@@ -264,6 +280,18 @@ func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) {
 
 		_, err = w.Write([]byte("accepted"))
 		if err != nil {
+			slog.ErrorContext(
+				r.Context(),
+				"failed write response",
+				"path",
+				r.URL.Path,
+				"site",
+				site.ID,
+				"form",
+				form.ID,
+				"err",
+				err.Error(),
+			)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 
 			return
@@ -397,7 +425,7 @@ func validatePayload(form *config.Form, payload map[string]any) error {
 			}
 		case config.FormFieldObjects:
 			arr, ok := val.([]any)
-			if !ok {
+			if !ok && field.Required {
 				panic(fmt.Sprintf("field %q should have been an array but it is %T", k, val))
 			}
 
@@ -494,10 +522,10 @@ func validatePayload(form *config.Form, payload map[string]any) error {
 	return nil
 }
 
-func createSMTPTemplates(form *config.Form) ([]smtpTemplate, error) {
-	result := make([]smtpTemplate, len(form.SMTPNotifiers))
+func createSMTPTemplates(form *config.Form) ([]sesTemplate, error) {
+	result := make([]sesTemplate, len(form.SESNotifiers))
 
-	for i, notifier := range form.SMTPNotifiers {
+	for i, notifier := range form.SESNotifiers {
 		subjTmpl, err := texttemplate.New("subject").Parse(notifier.Subject)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse subject template: %w", err)
@@ -553,7 +581,7 @@ func createSMTPTemplates(form *config.Form) ([]smtpTemplate, error) {
 			return nil, fmt.Errorf("failed to parse text template: %w", err)
 		}
 
-		result[i] = smtpTemplate{
+		result[i] = sesTemplate{
 			subject: subjTmpl,
 			intro:   introTmpl,
 			html:    html,
@@ -566,11 +594,11 @@ func createSMTPTemplates(form *config.Form) ([]smtpTemplate, error) {
 	return result, nil
 }
 
-func handleSMTPNotifiers(
+func handleSESNotifiers(
 	w http.ResponseWriter,
 	r *http.Request,
 	form *config.Form,
-	tmpls []smtpTemplate,
+	tmpls []sesTemplate,
 	payload map[string]any,
 ) error {
 	for _, tmpl := range tmpls {
@@ -629,7 +657,7 @@ func handleSMTPNotifiers(
 			objs[name] = make([]string, 0)
 
 			val, ok := payload[name].([]any)
-			if !ok {
+			if !ok && form.Fields[name].Required {
 				panic(fmt.Sprintf("field %q has a value that is not an array but %T", name, payload[name]))
 			}
 
@@ -659,7 +687,9 @@ func handleSMTPNotifiers(
 
 		data["objs"] = objs
 
-		err = tmpl.html.Execute(os.Stdout, data)
+		var htmlBuf bytes.Buffer
+
+		err = tmpl.html.Execute(&htmlBuf, data)
 		if err != nil {
 			slog.ErrorContext(
 				r.Context(),
@@ -673,7 +703,9 @@ func handleSMTPNotifiers(
 			return fmt.Errorf("failed to execute HTML template: %w", err)
 		}
 
-		err = tmpl.text.Execute(os.Stdout, data)
+		var textBuf bytes.Buffer
+
+		err = tmpl.text.Execute(&textBuf, data)
 		if err != nil {
 			slog.ErrorContext(
 				r.Context(),
@@ -686,6 +718,64 @@ func handleSMTPNotifiers(
 
 			return fmt.Errorf("failed to execute text template: %w", err)
 		}
+
+		err = sendSES(r.Context(), tmpl.cfg, subjBuf.String(), htmlBuf.String(), textBuf.String())
+		if err != nil {
+			slog.ErrorContext(
+				r.Context(),
+				"failed to send email",
+				"path",
+				r.URL.Path,
+				"err",
+				err,
+			)
+
+			return fmt.Errorf("failed to send email: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func sendSES(
+	ctx context.Context,
+	notifier *config.SESNotifier,
+	subject string,
+	htmlBody string,
+	textBody string,
+) error {
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(notifier.Region))
+	if err != nil {
+		return fmt.Errorf("failed to create AWS config: %w", err)
+	}
+
+	client := ses.NewFromConfig(cfg)
+	input := &ses.SendEmailInput{ //nolint:exhaustruct // use defaults
+		Destination: &types.Destination{ //nolint:exhaustruct // use defaults
+			ToAddresses: []string{notifier.To},
+		},
+		Message: &types.Message{
+			Body: &types.Body{
+				Html: &types.Content{
+					Charset: aws.String("UTF-8"),
+					Data:    aws.String(htmlBody),
+				},
+				Text: &types.Content{
+					Charset: aws.String("UTF-8"),
+					Data:    aws.String(textBody),
+				},
+			},
+			Subject: &types.Content{
+				Charset: aws.String("UTF-8"),
+				Data:    aws.String(subject),
+			},
+		},
+		Source: aws.String(notifier.From),
+	}
+
+	_, err = client.SendEmail(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to send email: %w", err)
 	}
 
 	return nil

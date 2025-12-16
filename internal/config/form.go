@@ -50,7 +50,7 @@ type Form struct {
 	ID                  string               `json:"id"`
 	Token               string               `json:"token"`
 	Fields              map[string]FormField `json:"fields"`
-	SMTPNotifiers       []*SMTPNotifier      `json:"smtp"`
+	SESNotifiers        []*SESNotifier       `json:"ses"`
 	ContentType         FormContentType      `json:"contentType"`
 	AccessControlMaxAge int                  `json:"accessControlMaxAge"`
 }
@@ -78,8 +78,8 @@ type FormField struct {
 	Required        bool          `json:"required"`
 }
 
-// SMTPNotifier is the config for a SMTP form notifier.
-type SMTPNotifier struct {
+// SESNotifier is the config for an AWS SES form notifier.
+type SESNotifier struct {
 	From string `json:"from"`
 	To   string `json:"to"`
 	Lang string `json:"lang"`
@@ -90,12 +90,8 @@ type SMTPNotifier struct {
 
 	// Intro is a text template that will be used as an intro in
 	// the notification email before the form fields.
-	Intro          string `json:"intro"`
-	Username       string `json:"username"`
-	Password       string `json:"password"`
-	UsernameEnvVar string `json:"usernameEnv"`
-	PasswordEnvVar string `json:"passwordEnv"`
-	Host           string `json:"host"`
+	Intro  string `json:"intro"`
+	Region string `json:"region"`
 
 	// FieldOrder is the order in which the non-hidden form fields should be
 	// output to the SMTP notification. If FieldOrder is given, it must contain
@@ -106,7 +102,6 @@ type SMTPNotifier struct {
 	// notification. It must contain all of the fields that are not contained in
 	// FieldOrder.
 	HiddenFields []string `json:"hiddenFields"`
-	Port         int      `json:"port"`
 }
 
 // UnmarshalJSON implements [encoding/json.Unmarshaler].
@@ -201,7 +196,7 @@ func (f *Form) validate() error {
 }
 
 func (f *Form) validateSMTPNotifiers() error {
-	for _, smtp := range f.SMTPNotifiers {
+	for _, smtp := range f.SESNotifiers {
 		if smtp.From == "" {
 			return fmt.Errorf("%w: empty From address", errConfig)
 		}
@@ -218,20 +213,8 @@ func (f *Form) validateSMTPNotifiers() error {
 			return fmt.Errorf("%w: empty subject for SMTP form notification", errConfig)
 		}
 
-		if smtp.Host == "" {
-			return fmt.Errorf("%w: empty SMTP host", errConfig)
-		}
-
-		if smtp.Port <= 0 {
-			return fmt.Errorf("%w: invalid SMTP port %d", errConfig, smtp.Port)
-		}
-
-		if smtp.Username == "" && smtp.UsernameEnvVar == "" {
-			return fmt.Errorf("%w: no SMTP username or environment variable name provided", errConfig)
-		}
-
-		if smtp.Password == "" && smtp.PasswordEnvVar == "" {
-			return fmt.Errorf("%w: no SMTP password or environment variable name provided", errConfig)
+		if smtp.Region == "" {
+			return fmt.Errorf("%w: empty SES region", errConfig)
 		}
 
 		err := f.validateSMTPNotifierFields(smtp)
@@ -243,7 +226,7 @@ func (f *Form) validateSMTPNotifiers() error {
 	return nil
 }
 
-func (f *Form) validateSMTPNotifierFields(smtp *SMTPNotifier) error {
+func (f *Form) validateSMTPNotifierFields(smtp *SESNotifier) error {
 	seenFields := map[string]struct{}{}
 
 	for _, name := range smtp.HiddenFields {

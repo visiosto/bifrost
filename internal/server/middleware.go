@@ -66,11 +66,12 @@ func withMiddleware(h http.Handler, cfg *config.Config, l *fixedWindowLimiter, p
 
 func recoverer(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
+		defer func(ctx context.Context) {
 			if rec := recover(); rec != nil {
+				slog.ErrorContext(ctx, "recovered panic", "rec", rec)
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			}
-		}()
+		}(r.Context())
 
 		h.ServeHTTP(w, r)
 	})
