@@ -34,7 +34,7 @@ GO_MODULE = github.com/visiosto/bifrost
 RM = rm -f
 
 # Default target
-all: bifrost
+all: build
 
 # CODE QUALITY & CHECKS
 
