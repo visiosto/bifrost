@@ -127,7 +127,23 @@ func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) {
 			return
 		}
 
-		// TODO: Add request ID to the logs.
+		if dec.More() {
+			slog.WarnContext(
+				r.Context(),
+				"reject request with more than one JSON object",
+				"path",
+				r.URL.Path,
+				"site",
+				site.ID,
+				"form",
+				form.ID,
+			)
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+
+			return
+		}
+
+		// TODO: Remove this.
 		slog.DebugContext(
 			r.Context(),
 			"received form payload",
