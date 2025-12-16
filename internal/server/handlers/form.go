@@ -33,26 +33,43 @@ import (
 //
 //nolint:lll
 const htmlTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="{{.lang}}">
+<head>
 <meta charset="utf-8" />
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-<title>{{.subject}}</title>
-<html lang="{{.lang}}">
-  <head></head>
-  <h1>{{.subject}}</h1>
-  {{if (ne .intro "") -}}
-  <p style="font-size: 14px; line-height: 24px; margin: 16px 0">
-	{{- .intro -}}
-  </p>
-  {{end -}}
-  {{ $fields := .fields }}
-  {{range $key, $value := .payload -}}
-	{{ $field := index $fields $key -}}
-	{{ if $field.Hide }}{{ continue }}{{ end }}
-	<h2>{{ if (eq $field.DisplayName "") }}{{ $key }}{{ else }}{{ $field.DisplayName }}{{ end }}</h2>
-    <p style="font-size: 14px; line-height: 24px; margin: 16px 0">
-	  {{- $value -}}
-    </p>
-  {{end -}}
+<title>{{- .subject -}}</title>
+</head>
+<body>
+	<h1>{{.subject}}</h1>
+	{{if (ne .intro "") -}}
+		<p style="font-size: 14px; line-height: 24px; margin: 16px 0">
+			{{- .intro -}}
+		</p>
+	{{end -}}
+	{{$fields := .fields}}
+	{{$payload := .payload}}
+	{{$hidden := .hidden}}
+	{{if (gt (len .order) 0) -}}
+		{{range $key := .order -}}
+			{{$field := index $fields $key -}}
+			<h2>{{if (eq $field.DisplayName "")}}{{$key}}{{else}}{{$field.DisplayName}}{{end}}</h2>
+			<p style="font-size: 14px; line-height: 24px; margin: 16px 0">
+				{{- index $payload $key -}}
+			</p>
+		{{end -}}
+	{{else -}}
+		{{range $key, $value := $payload -}}
+			{{$hide := false}}
+			{{range $k := $hidden}}{{if (eq $k $key)}}{{$hide = true}}{{end}}{{end}}
+			{{if $hide}}{{continue}}{{end}}
+			{{$field := index $fields $key -}}
+			<h2>{{if (eq $field.DisplayName "")}}{{$key}}{{else}}{{$field.DisplayName}}{{end}}</h2>
+			<p style="font-size: 14px; line-height: 24px; margin: 16px 0">
+				{{- $value -}}
+			</p>
+		{{end -}}
+	{{end -}}
+</body>
 </html>
 `
 
@@ -162,7 +179,7 @@ func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) {
 			return
 		}
 
-		err = sendSMTPNotification(w, r, form, smtpTmpls, payload)
+		err = sendSMTPNotifications(w, r, form, smtpTmpls, payload)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 
@@ -310,7 +327,7 @@ func createSMTPTemplates(form *config.Form) ([]smtpTemplate, error) {
 	return result, nil
 }
 
-func sendSMTPNotification(
+func sendSMTPNotifications(
 	w http.ResponseWriter,
 	r *http.Request,
 	form *config.Form,
@@ -322,6 +339,8 @@ func sendSMTPNotification(
 		data["payload"] = payload
 		data["fields"] = form.Fields
 		data["lang"] = tmpl.cfg.Lang
+		data["order"] = tmpl.cfg.FieldOrder
+		data["hidden"] = tmpl.cfg.HiddenFields
 
 		var subjBuf bytes.Buffer
 

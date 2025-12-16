@@ -50,8 +50,6 @@ type FormField struct {
 	Min         int       `json:"min"`
 	Max         int       `json:"max"`
 	Required    bool      `json:"required"`
-	// Hide tells to hide the field from the notifications sent.
-	Hide bool `json:"hide"`
 }
 
 // UnmarshalJSON implements [encoding/json.Unmarshaler].

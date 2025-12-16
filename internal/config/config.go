@@ -85,7 +85,17 @@ type SMTPNotifier struct {
 	UsernameEnvVar string `json:"usernameEnv"`
 	PasswordEnvVar string `json:"passwordEnv"`
 	Host           string `json:"host"`
-	Port           int    `json:"port"`
+
+	// FieldOrder is the order in which the non-hidden form fields should be
+	// output to the SMTP notification. If FieldOrder is given, it must contain
+	// all of the non-hidden fields.
+	FieldOrder []string `json:"fieldOrder"`
+
+	// HiddenFields defines the fields that should not be included in this
+	// notification. It must contain all of the fields that are not contained in
+	// FieldOrder.
+	HiddenFields []string `json:"hiddenFields"`
+	Port         int      `json:"port"`
 }
 
 // Load loads the config from the config file at the given path.
@@ -183,6 +193,15 @@ func (f *Form) validate() error {
 		}
 	}
 
+	err := f.validateSMTPNotifiers()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (f *Form) validateSMTPNotifiers() error {
 	for _, smtp := range f.SMTPNotifiers {
 		if smtp.From == "" {
 			return fmt.Errorf("%w: empty From address", errConfig)
@@ -214,6 +233,68 @@ func (f *Form) validate() error {
 
 		if smtp.Password == "" && smtp.PasswordEnvVar == "" {
 			return fmt.Errorf("%w: no SMTP password or environment variable name provided", errConfig)
+		}
+
+		err := f.validateSMTPNotifierFields(smtp)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (f *Form) validateSMTPNotifierFields(smtp *SMTPNotifier) error {
+	seenFields := map[string]struct{}{}
+
+	for _, name := range smtp.HiddenFields {
+		if _, ok := f.Fields[name]; !ok {
+			return fmt.Errorf(
+				"%w: unknown field name %q in hidden SMTP notification fields of form %q",
+				errConfig,
+				name,
+				f.ID,
+			)
+		}
+
+		seenFields[name] = struct{}{}
+	}
+
+	if smtp.FieldOrder != nil {
+		for _, name := range smtp.FieldOrder {
+			if _, ok := f.Fields[name]; !ok {
+				return fmt.Errorf(
+					"%w: unknown field name %q in SMTP notification field order of form %q",
+					errConfig,
+					name,
+					f.ID,
+				)
+			}
+
+			if _, ok := seenFields[name]; ok {
+				return fmt.Errorf(
+					"%w: field %q in both field order and the hidden fields of SMTP notifier of form %q",
+					errConfig,
+					name,
+					f.ID,
+				)
+			}
+
+			seenFields[name] = struct{}{}
+		}
+
+		// If the field order is given, we need to make sure that all of
+		// the fields are either in the order or hidden to avoid strange
+		// decisions later.
+		for name := range f.Fields {
+			if _, ok := seenFields[name]; !ok {
+				return fmt.Errorf(
+					"%w: field %q missing in the field order and the hidden fields of SMTP notifier of form %q",
+					errConfig,
+					name,
+					f.ID,
+				)
+			}
 		}
 	}
 
