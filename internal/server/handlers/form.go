@@ -73,6 +73,26 @@ const htmlTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional/
 </html>
 `
 
+const textTemplate = `{{- if (ne .intro "") -}}{{.intro}}{{- end}}
+{{$fields := .fields -}}
+{{$payload := .payload -}}
+{{$hidden := .hidden -}}
+{{if (gt (len .order) 0) -}}
+{{range $key := .order -}}
+{{$field := index $fields $key -}}
+{{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}: {{index $payload $key}}
+{{end -}}
+{{else -}}
+{{range $key, $value := $payload -}}
+{{$hide := false}}
+{{range $k := $hidden}}{{if (eq $k $key)}}{{$hide = true}}{{end}}{{end}}
+{{if $hide}}{{continue}}{{end}}
+{{$field := index $fields $key -}}
+{{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}: {{$value}}
+{{end -}}
+{{end}}
+`
+
 type payloadError struct {
 	field   string
 	message string
@@ -82,6 +102,7 @@ type smtpTemplate struct {
 	subject *texttemplate.Template
 	intro   *texttemplate.Template
 	html    *template.Template
+	text    *texttemplate.Template
 	cfg     *config.SMTPNotifier
 }
 
@@ -195,7 +216,7 @@ func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) {
 			return
 		}
 
-		err = sendSMTPNotifications(w, r, form, smtpTmpls, payload)
+		err = handleSMTPNotifiers(w, r, form, smtpTmpls, payload)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 
@@ -325,17 +346,25 @@ func createSMTPTemplates(form *config.Form) ([]smtpTemplate, error) {
 			return nil, fmt.Errorf("failed to parse intro template: %w", err)
 		}
 
-		var tmpl *template.Template
+		var html *template.Template
 
-		tmpl, err = template.New("html").Parse(htmlTemplate)
+		html, err = template.New("html").Parse(htmlTemplate)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse HTML template: %w", err)
+		}
+
+		var text *texttemplate.Template
+
+		text, err = texttemplate.New("text").Parse(textTemplate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse text template: %w", err)
 		}
 
 		result[i] = smtpTemplate{
 			subject: subjTmpl,
 			intro:   introTmpl,
-			html:    tmpl,
+			html:    html,
+			text:    text,
 			cfg:     notifier,
 		}
 	}
@@ -343,7 +372,7 @@ func createSMTPTemplates(form *config.Form) ([]smtpTemplate, error) {
 	return result, nil
 }
 
-func sendSMTPNotifications(
+func handleSMTPNotifiers(
 	w http.ResponseWriter,
 	r *http.Request,
 	form *config.Form,
@@ -412,6 +441,20 @@ func sendSMTPNotifications(
 			)
 
 			return fmt.Errorf("failed to execute HTML template: %w", err)
+		}
+
+		err = tmpl.text.Execute(os.Stdout, data)
+		if err != nil {
+			slog.ErrorContext(
+				r.Context(),
+				"failed to execute text template",
+				"path",
+				r.URL.Path,
+				"err",
+				err,
+			)
+
+			return fmt.Errorf("failed to execute text template: %w", err)
 		}
 	}
 
