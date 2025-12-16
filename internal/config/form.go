@@ -29,7 +29,9 @@ const (
 // Form field types.
 const (
 	FormFieldBool FormFieldType = iota
+	FormFieldInt
 	FormFieldString
+	FormFieldObjects
 )
 
 var (
@@ -55,11 +57,25 @@ type Form struct {
 
 // FormField is the configuration for a single form field.
 type FormField struct {
-	DisplayName string        `json:"displayName"`
-	Type        FormFieldType `json:"type"`
-	Min         int           `json:"min"`
-	Max         int           `json:"max"`
-	Required    bool          `json:"required"`
+	// Shape is the shape of the objects in the array in the field if the type
+	// of the field [FormFieldObjects]. The keys are the keys of the objects and
+	// the values are the types. There is no further validation for the values
+	// for now, and further "objects" are not permitted.
+	//
+	// TODO: Add validation to make sure that:
+	//   1) objects have this,
+	//   2) others do not have this
+	//   3) objects include the template for printing the value row
+	Shape       map[string]FormFieldType `json:"shape"`
+	DisplayName string                   `json:"displayName"`
+
+	// DisplayTemplate is a text template that is parsed and executed to display
+	// each element of objects.
+	DisplayTemplate string        `json:"displayTemplate"`
+	Type            FormFieldType `json:"type"`
+	Min             int           `json:"min"`
+	Max             int           `json:"max"`
+	Required        bool          `json:"required"`
 }
 
 // SMTPNotifier is the config for a SMTP form notifier.
@@ -128,8 +144,12 @@ func (t FormFieldType) String() string {
 	switch t {
 	case FormFieldBool:
 		return "bool"
+	case FormFieldInt:
+		return "int"
 	case FormFieldString:
 		return "string"
+	case FormFieldObjects:
+		return "objects"
 	default:
 		return "invalid-type"
 	}
@@ -139,8 +159,12 @@ func (t *FormFieldType) parse(s string) error {
 	switch strings.ToLower(s) {
 	case "bool", "boolean":
 		*t = FormFieldBool
+	case "int", "number":
+		*t = FormFieldInt
 	case "string":
 		*t = FormFieldString
+	case "objects":
+		*t = FormFieldObjects
 	default:
 		return fmt.Errorf("%w: %s", errUnknownField, s)
 	}

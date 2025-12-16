@@ -46,16 +46,26 @@ const htmlTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional/
 			{{- .intro -}}
 		</p>
 	{{end -}}
-	{{$fields := .fields}}
-	{{$payload := .payload}}
-	{{$hidden := .hidden}}
+	{{$fields := .fields -}}
+	{{$objs := .objs -}}
+	{{$payload := .payload -}}
+	{{$hidden := .hidden -}}
 	{{if (gt (len .order) 0) -}}
 		{{range $key := .order -}}
 			{{$field := index $fields $key -}}
 			<h2>{{if (eq $field.DisplayName "")}}{{$key}}{{else}}{{$field.DisplayName}}{{end}}</h2>
-			<p style="font-size: 14px; line-height: 24px; margin: 16px 0">
-				{{- index $payload $key -}}
-			</p>
+			{{if (IsObj $key)}}
+				{{$lines := index $objs $key -}}
+				<ul style="font-size: 14px; line-height: 24px; margin: 16px 0">
+					{{range $line := $lines}}
+						<li>{{- $line -}}</li>
+					{{end}}
+				</ul>
+			{{ else -}}
+				<p style="font-size: 14px; line-height: 24px; margin: 16px 0">
+					{{- index $payload $key -}}
+				</p>
+			{{end -}}
 		{{end -}}
 	{{else -}}
 		{{range $key, $value := $payload -}}
@@ -64,9 +74,18 @@ const htmlTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional/
 			{{if $hide}}{{continue}}{{end}}
 			{{$field := index $fields $key -}}
 			<h2>{{if (eq $field.DisplayName "")}}{{$key}}{{else}}{{$field.DisplayName}}{{end}}</h2>
-			<p style="font-size: 14px; line-height: 24px; margin: 16px 0">
-				{{- $value -}}
-			</p>
+			{{if (IsObj $key)}}
+				{{$lines := index $objs $key -}}
+				<ul style="font-size: 14px; line-height: 24px; margin: 16px 0">
+					{{range $line := $lines}}
+						<li>{{- $line -}}</li>
+					{{end}}
+				</ul>
+			{{ else -}}
+				<p style="font-size: 14px; line-height: 24px; margin: 16px 0">
+					{{- $value -}}
+				</p>
+			{{end -}}
 		{{end -}}
 	{{end -}}
 </body>
@@ -75,20 +94,37 @@ const htmlTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional/
 
 const textTemplate = `{{- if (ne .intro "") -}}{{.intro}}{{- end}}
 {{$fields := .fields -}}
+{{$objs := .objs -}}
 {{$payload := .payload -}}
 {{$hidden := .hidden -}}
 {{if (gt (len .order) 0) -}}
 {{range $key := .order -}}
 {{$field := index $fields $key -}}
+{{if (IsObj $key)}}
+{{$lines := index $objs $key -}}
+{{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}:
+{{range $line := $lines}}
+  - {{$line -}}
+{{end}}
+{{ else -}}
 {{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}: {{index $payload $key}}
+{{end -}}
 {{end -}}
 {{else -}}
 {{range $key, $value := $payload -}}
-{{$hide := false}}
-{{range $k := $hidden}}{{if (eq $k $key)}}{{$hide = true}}{{end}}{{end}}
-{{if $hide}}{{continue}}{{end}}
+{{$hide := false -}}
+{{range $k := $hidden -}}{{if (eq $k $key) -}}{{$hide = true -}}{{end -}}{{end -}}
+{{if $hide -}}{{continue -}}{{end -}}
 {{$field := index $fields $key -}}
+{{if (IsObj $key)}}
+{{$lines := index $objs $key -}}
+{{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}:
+{{range $line := $lines}}
+  - {{$line -}}
+{{end}}
+{{ else -}}
 {{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}: {{$value}}
+{{end -}}
 {{end -}}
 {{end}}
 `
@@ -104,6 +140,7 @@ type smtpTemplate struct {
 	html    *template.Template
 	text    *texttemplate.Template
 	cfg     *config.SMTPNotifier
+	objs    map[string]*texttemplate.Template
 }
 
 func (e *payloadError) Error() string {
@@ -234,7 +271,7 @@ func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) {
 	}), nil
 }
 
-//nolint:cyclop,gocognit // let's keep this as one function
+//nolint:cyclop,funlen,gocognit,gocyclo,maintidx // let's keep this as one function
 func validatePayload(form *config.Form, payload map[string]any) error {
 	seenKeys := map[string]struct{}{}
 
@@ -254,11 +291,25 @@ func validatePayload(form *config.Form, payload map[string]any) error {
 					message: fmt.Sprintf("field %q has invalid type bool, expected %s", k, cfg.Type.String()),
 				}
 			}
+		case float64:
+			if cfg.Type != config.FormFieldInt {
+				return &payloadError{
+					field:   k,
+					message: fmt.Sprintf("field %q has invalid type number, expected %s", k, cfg.Type.String()),
+				}
+			}
 		case string:
 			if cfg.Type != config.FormFieldString {
 				return &payloadError{
 					field:   k,
 					message: fmt.Sprintf("field %q has invalid type string, expected %s", k, cfg.Type.String()),
+				}
+			}
+		case []any:
+			if cfg.Type != config.FormFieldObjects {
+				return &payloadError{
+					field:   k,
+					message: fmt.Sprintf("field %q has invalid type array, expected %s", k, cfg.Type.String()),
 				}
 			}
 		default:
@@ -269,10 +320,10 @@ func validatePayload(form *config.Form, payload map[string]any) error {
 		}
 	}
 
-	for k, v := range form.Fields { //nolint:varnamelen // basic names for loopvars
+	for k, field := range form.Fields { //nolint:varnamelen // basic names for loopvars
 		_, ok := seenKeys[k]
 		if !ok {
-			if v.Required {
+			if field.Required {
 				return &payloadError{
 					field:   k,
 					message: fmt.Sprintf("missing required field %q", k),
@@ -284,46 +335,159 @@ func validatePayload(form *config.Form, payload map[string]any) error {
 
 		val := payload[k]
 
-		switch v.Type {
+		switch field.Type {
 		case config.FormFieldBool:
 			b, ok := val.(bool)
 			if !ok {
 				panic(fmt.Sprintf("field %q should have been a bool but it is %T", k, val))
 			}
 
-			if v.Required && !b {
+			if field.Required && !b {
 				return &payloadError{
 					field:   k,
 					message: fmt.Sprintf("field %q is required but its value is false", k),
 				}
 			}
+		case config.FormFieldInt:
+			f, ok := val.(float64)
+			if !ok {
+				panic(fmt.Sprintf("field %q should have been a number but it is %T", k, val))
+			}
+
+			i := int(f)
+
+			if i < field.Min || i > field.Max {
+				return &payloadError{
+					field: k,
+					message: fmt.Sprintf(
+						"field %q must be between %d and %d but it is %d",
+						k,
+						field.Min,
+						field.Max,
+						i,
+					),
+				}
+			}
+
+			payload[k] = i
 		case config.FormFieldString:
 			s, ok := val.(string)
 			if !ok {
 				panic(fmt.Sprintf("field %q should have been a string but it is %T", k, val))
 			}
 
-			if v.Required && s == "" {
+			if field.Required && s == "" {
 				return &payloadError{
 					field:   k,
 					message: fmt.Sprintf("field %q is required but its value is empty", k),
 				}
 			}
 
-			if (len(s) < v.Min || len(s) > v.Max) && v.Max != 0 {
+			if (len(s) < field.Min || len(s) > field.Max) && field.Max != 0 {
 				return &payloadError{
 					field: k,
 					message: fmt.Sprintf(
 						"field %q must be between %d and %d characters but it is %d characters",
 						k,
-						v.Min,
-						v.Max,
+						field.Min,
+						field.Max,
 						len(s),
 					),
 				}
 			}
+		case config.FormFieldObjects:
+			arr, ok := val.([]any)
+			if !ok {
+				panic(fmt.Sprintf("field %q should have been an array but it is %T", k, val))
+			}
+
+			if field.Required && len(arr) == 0 {
+				return &payloadError{
+					field:   k,
+					message: fmt.Sprintf("field %q is required but its value is empty", k),
+				}
+			}
+
+			for _, a := range arr {
+				obj, ok := a.(map[string]any)
+				if !ok {
+					return &payloadError{
+						field:   k,
+						message: fmt.Sprintf("could not cast element of field %q to a map", k),
+					}
+				}
+
+				seenInObj := map[string]struct{}{}
+
+				for name, value := range obj {
+					var shapeType config.FormFieldType
+
+					shapeType, ok = field.Shape[name]
+					if !ok {
+						return &payloadError{field: k, message: fmt.Sprintf("unknown field %q in field %q", name, k)}
+					}
+
+					seenInObj[name] = struct{}{}
+
+					switch shapeType {
+					case config.FormFieldBool:
+						if _, ok = value.(bool); !ok {
+							return &payloadError{
+								field: k,
+								message: fmt.Sprintf(
+									"value %q in field %q should be bool but it is %T",
+									name,
+									k,
+									value,
+								),
+							}
+						}
+					case config.FormFieldInt:
+						if _, ok = value.(float64); !ok {
+							return &payloadError{
+								field: k,
+								message: fmt.Sprintf(
+									"value %q in field %q should be number but it is %T",
+									name,
+									k,
+									value,
+								),
+							}
+						}
+					case config.FormFieldString:
+						if _, ok = value.(string); !ok {
+							return &payloadError{
+								field: k,
+								message: fmt.Sprintf(
+									"value %q in field %q should be string but it is %T",
+									name,
+									k,
+									value,
+								),
+							}
+						}
+					case config.FormFieldObjects:
+						fallthrough //nolint:gocritic // Just throw the error.
+					default:
+						panic(fmt.Sprintf("value %q in field %q has invalid configured type", name, k))
+					}
+				}
+
+				for name := range field.Shape {
+					if _, ok = seenInObj[name]; !ok {
+						return &payloadError{
+							field: k,
+							message: fmt.Sprintf(
+								"value %q in field %q missing",
+								name,
+								k,
+							),
+						}
+					}
+				}
+			}
 		default:
-			panic(fmt.Sprintf("invalid form field type: %d", v.Type))
+			panic(fmt.Sprintf("invalid form field type: %d", field.Type))
 		}
 	}
 
@@ -346,16 +510,45 @@ func createSMTPTemplates(form *config.Form) ([]smtpTemplate, error) {
 			return nil, fmt.Errorf("failed to parse intro template: %w", err)
 		}
 
+		objs := map[string]*texttemplate.Template{}
+
+		for name, field := range form.Fields {
+			if field.Type != config.FormFieldObjects {
+				continue
+			}
+
+			var obj *texttemplate.Template
+
+			obj, err = texttemplate.New(name).Parse(field.DisplayTemplate)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse text template for field %q: %w", name, err)
+			}
+
+			objs[name] = obj
+		}
+
 		var html *template.Template
 
-		html, err = template.New("html").Parse(htmlTemplate)
+		html, err = template.New("html").Funcs(template.FuncMap{
+			"IsObj": func(name string) bool {
+				_, ok := objs[name]
+
+				return ok
+			},
+		}).Parse(htmlTemplate)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse HTML template: %w", err)
 		}
 
 		var text *texttemplate.Template
 
-		text, err = texttemplate.New("text").Parse(textTemplate)
+		text, err = texttemplate.New("text").Funcs(texttemplate.FuncMap{
+			"IsObj": func(name string) bool {
+				_, ok := objs[name]
+
+				return ok
+			},
+		}).Parse(textTemplate)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse text template: %w", err)
 		}
@@ -366,6 +559,7 @@ func createSMTPTemplates(form *config.Form) ([]smtpTemplate, error) {
 			html:    html,
 			text:    text,
 			cfg:     notifier,
+			objs:    objs,
 		}
 	}
 
@@ -428,6 +622,42 @@ func handleSMTPNotifiers(
 		}
 
 		data["intro"] = introBuf.String()
+
+		objs := map[string][]string{}
+
+		for name, obj := range tmpl.objs {
+			objs[name] = make([]string, 0)
+
+			val, ok := payload[name].([]any)
+			if !ok {
+				panic(fmt.Sprintf("field %q has a value that is not an array but %T", name, payload[name]))
+			}
+
+			for _, v := range val {
+				var buf bytes.Buffer
+
+				err = obj.Execute(&buf, v)
+				if err != nil {
+					slog.ErrorContext(
+						r.Context(),
+						"failed to execute object template",
+						"path",
+						r.URL.Path,
+						"field",
+						name,
+						"err",
+						err,
+					)
+					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+
+					return fmt.Errorf("failed to execute template for field %q: %w", name, err)
+				}
+
+				objs[name] = append(objs[name], buf.String())
+			}
+		}
+
+		data["objs"] = objs
 
 		err = tmpl.html.Execute(os.Stdout, data)
 		if err != nil {

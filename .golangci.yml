@@ -179,6 +179,8 @@ linters:
     varnamelen:
       max-distance: 50
       ignore-decls:
+        - i int
+        - ok bool
         - r *http.Request
         - w http.ResponseWriter
     wsl:
