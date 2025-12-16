@@ -23,13 +23,13 @@ import (
 
 // Form body content types.
 const (
-	ContentJSON ContentType = iota
+	FormContentTypeJSON FormContentType = iota
 )
 
 // Form field types.
 const (
-	FieldBool FieldType = iota
-	FieldString
+	FormFieldBool FormFieldType = iota
+	FormFieldString
 )
 
 var (
@@ -37,23 +37,64 @@ var (
 	errUnknownField       = errors.New("unknown form field type")
 )
 
-// ContentType is the type of the request body that the form uses.
-type ContentType int
+// FormContentType is the type of the request body that the form uses.
+type FormContentType int
 
-// FieldType is the type of a form field.
-type FieldType int //nolint:recvcheck // no need to have pointer receiver for all functions
+// FormFieldType is the type of a form field.
+type FormFieldType int //nolint:recvcheck // no need to have pointer receiver for all functions
+
+// Form is the config of a form in a site.
+type Form struct {
+	ID                  string               `json:"id"`
+	Token               string               `json:"token"`
+	Fields              map[string]FormField `json:"fields"`
+	SMTPNotifiers       []*SMTPNotifier      `json:"smtp"`
+	ContentType         FormContentType      `json:"contentType"`
+	AccessControlMaxAge int                  `json:"accessControlMaxAge"`
+}
 
 // FormField is the configuration for a single form field.
 type FormField struct {
-	DisplayName string    `json:"displayName"`
-	Type        FieldType `json:"type"`
-	Min         int       `json:"min"`
-	Max         int       `json:"max"`
-	Required    bool      `json:"required"`
+	DisplayName string        `json:"displayName"`
+	Type        FormFieldType `json:"type"`
+	Min         int           `json:"min"`
+	Max         int           `json:"max"`
+	Required    bool          `json:"required"`
+}
+
+// SMTPNotifier is the config for a SMTP form notifier.
+type SMTPNotifier struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Lang string `json:"lang"`
+
+	// Subject is a text template that will be used as the subject of
+	// the notification email.
+	Subject string `json:"subject"`
+
+	// Intro is a text template that will be used as an intro in
+	// the notification email before the form fields.
+	Intro          string `json:"intro"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	UsernameEnvVar string `json:"usernameEnv"`
+	PasswordEnvVar string `json:"passwordEnv"`
+	Host           string `json:"host"`
+
+	// FieldOrder is the order in which the non-hidden form fields should be
+	// output to the SMTP notification. If FieldOrder is given, it must contain
+	// all of the non-hidden fields.
+	FieldOrder []string `json:"fieldOrder"`
+
+	// HiddenFields defines the fields that should not be included in this
+	// notification. It must contain all of the fields that are not contained in
+	// FieldOrder.
+	HiddenFields []string `json:"hiddenFields"`
+	Port         int      `json:"port"`
 }
 
 // UnmarshalJSON implements [encoding/json.Unmarshaler].
-func (t *ContentType) UnmarshalJSON(data []byte) error {
+func (t *FormContentType) UnmarshalJSON(data []byte) error {
 	s, err := strconv.Unquote(string(data))
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal form content type: %w", err)
@@ -62,10 +103,10 @@ func (t *ContentType) UnmarshalJSON(data []byte) error {
 	return t.parse(s)
 }
 
-func (t *ContentType) parse(s string) error {
+func (t *FormContentType) parse(s string) error {
 	switch strings.ToLower(s) {
 	case "json":
-		*t = ContentJSON
+		*t = FormContentTypeJSON
 	default:
 		return fmt.Errorf("%w: %s", errUnknownContentType, s)
 	}
@@ -74,7 +115,7 @@ func (t *ContentType) parse(s string) error {
 }
 
 // UnmarshalJSON implements [encoding/json.Unmarshaler].
-func (t *FieldType) UnmarshalJSON(data []byte) error {
+func (t *FormFieldType) UnmarshalJSON(data []byte) error {
 	s, err := strconv.Unquote(string(data))
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal form field type: %w", err)
@@ -83,25 +124,153 @@ func (t *FieldType) UnmarshalJSON(data []byte) error {
 	return t.parse(s)
 }
 
-func (t FieldType) String() string {
+func (t FormFieldType) String() string {
 	switch t {
-	case FieldBool:
+	case FormFieldBool:
 		return "bool"
-	case FieldString:
+	case FormFieldString:
 		return "string"
 	default:
 		return "invalid-type"
 	}
 }
 
-func (t *FieldType) parse(s string) error {
+func (t *FormFieldType) parse(s string) error {
 	switch strings.ToLower(s) {
 	case "bool", "boolean":
-		*t = FieldBool
+		*t = FormFieldBool
 	case "string":
-		*t = FieldString
+		*t = FormFieldString
 	default:
 		return fmt.Errorf("%w: %s", errUnknownField, s)
+	}
+
+	return nil
+}
+
+func (f *Form) validate() error {
+	// TODO: By default, we do not require the form token.
+	if f.ID == "" {
+		return fmt.Errorf("%w: empty form ID", errConfig)
+	}
+
+	if f.AccessControlMaxAge < 0 {
+		return fmt.Errorf("%w: accessControlMaxAge must be at least 0", errConfig)
+	}
+
+	for _, field := range f.Fields {
+		if field.Min < 0 {
+			return fmt.Errorf("%w: min field length must be greater than zero", errConfig)
+		}
+
+		if field.Max < field.Min {
+			return fmt.Errorf("%w: max field length must be greater then the min length", errConfig)
+		}
+	}
+
+	err := f.validateSMTPNotifiers()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (f *Form) validateSMTPNotifiers() error {
+	for _, smtp := range f.SMTPNotifiers {
+		if smtp.From == "" {
+			return fmt.Errorf("%w: empty From address", errConfig)
+		}
+
+		if smtp.To == "" {
+			return fmt.Errorf("%w: empty To address", errConfig)
+		}
+
+		if smtp.Lang == "" {
+			return fmt.Errorf("%w: empty language for SMTP form notification", errConfig)
+		}
+
+		if smtp.Subject == "" {
+			return fmt.Errorf("%w: empty subject for SMTP form notification", errConfig)
+		}
+
+		if smtp.Host == "" {
+			return fmt.Errorf("%w: empty SMTP host", errConfig)
+		}
+
+		if smtp.Port <= 0 {
+			return fmt.Errorf("%w: invalid SMTP port %d", errConfig, smtp.Port)
+		}
+
+		if smtp.Username == "" && smtp.UsernameEnvVar == "" {
+			return fmt.Errorf("%w: no SMTP username or environment variable name provided", errConfig)
+		}
+
+		if smtp.Password == "" && smtp.PasswordEnvVar == "" {
+			return fmt.Errorf("%w: no SMTP password or environment variable name provided", errConfig)
+		}
+
+		err := f.validateSMTPNotifierFields(smtp)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (f *Form) validateSMTPNotifierFields(smtp *SMTPNotifier) error {
+	seenFields := map[string]struct{}{}
+
+	for _, name := range smtp.HiddenFields {
+		if _, ok := f.Fields[name]; !ok {
+			return fmt.Errorf(
+				"%w: unknown field name %q in hidden SMTP notification fields of form %q",
+				errConfig,
+				name,
+				f.ID,
+			)
+		}
+
+		seenFields[name] = struct{}{}
+	}
+
+	if smtp.FieldOrder != nil {
+		for _, name := range smtp.FieldOrder {
+			if _, ok := f.Fields[name]; !ok {
+				return fmt.Errorf(
+					"%w: unknown field name %q in SMTP notification field order of form %q",
+					errConfig,
+					name,
+					f.ID,
+				)
+			}
+
+			if _, ok := seenFields[name]; ok {
+				return fmt.Errorf(
+					"%w: field %q in both field order and the hidden fields of SMTP notifier of form %q",
+					errConfig,
+					name,
+					f.ID,
+				)
+			}
+
+			seenFields[name] = struct{}{}
+		}
+
+		// If the field order is given, we need to make sure that all of
+		// the fields are either in the order or hidden to avoid strange
+		// decisions later.
+		for name := range f.Fields {
+			if _, ok := seenFields[name]; !ok {
+				return fmt.Errorf(
+					"%w: field %q missing in the field order and the hidden fields of SMTP notifier of form %q",
+					errConfig,
+					name,
+					f.ID,
+				)
+			}
+		}
 	}
 
 	return nil

@@ -248,14 +248,14 @@ func validatePayload(form *config.Form, payload map[string]any) error {
 
 		switch v.(type) {
 		case bool:
-			if cfg.Type != config.FieldBool {
+			if cfg.Type != config.FormFieldBool {
 				return &payloadError{
 					field:   k,
 					message: fmt.Sprintf("field %q has invalid type bool, expected %s", k, cfg.Type.String()),
 				}
 			}
 		case string:
-			if cfg.Type != config.FieldString {
+			if cfg.Type != config.FormFieldString {
 				return &payloadError{
 					field:   k,
 					message: fmt.Sprintf("field %q has invalid type string, expected %s", k, cfg.Type.String()),
@@ -285,7 +285,7 @@ func validatePayload(form *config.Form, payload map[string]any) error {
 		val := payload[k]
 
 		switch v.Type {
-		case config.FieldBool:
+		case config.FormFieldBool:
 			b, ok := val.(bool)
 			if !ok {
 				panic(fmt.Sprintf("field %q should have been a bool but it is %T", k, val))
@@ -297,7 +297,7 @@ func validatePayload(form *config.Form, payload map[string]any) error {
 					message: fmt.Sprintf("field %q is required but its value is false", k),
 				}
 			}
-		case config.FieldString:
+		case config.FormFieldString:
 			s, ok := val.(string)
 			if !ok {
 				panic(fmt.Sprintf("field %q should have been a string but it is %T", k, val))
