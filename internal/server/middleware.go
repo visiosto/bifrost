@@ -293,6 +293,11 @@ func rateLimit(h http.Handler, l *fixedWindowLimiter) http.Handler {
 }
 
 func remoteIP(r *http.Request) string {
+	realIP := r.Header.Get("X-Real-IP")
+	if realIP != "" {
+		return realIP
+	}
+
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
