@@ -372,7 +372,7 @@ func validatePayload(form *config.Form, payload map[string]any) error {
 			}
 
 			if s != "" {
-				return &honeypotError{message: fmt.Sprintf("honeypot field %q was set", k)}
+				return &honeypotError{message: fmt.Sprintf("honeypot field %q was set to %q", k, s)}
 			}
 		}
 
