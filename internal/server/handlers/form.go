@@ -133,6 +133,10 @@ const textTemplate = `{{- if (ne .intro "") -}}{{.intro}}{{- end}}
 {{end}}
 `
 
+type honeypotError struct {
+	message string
+}
+
 type payloadError struct {
 	field   string
 	message string
@@ -145,6 +149,10 @@ type sesTemplate struct {
 	text    *texttemplate.Template
 	cfg     *config.SESNotifier
 	objs    map[string]*texttemplate.Template
+}
+
+func (e *honeypotError) Error() string {
+	return e.message
 }
 
 func (e *payloadError) Error() string {
@@ -172,7 +180,7 @@ func FormPreflight(form *config.Form) http.Handler {
 }
 
 // SubmitForm returns a [http.Handler] for a form endpoint.
-func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) {
+func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) { //nolint:funlen // TODO: clean up
 	sesTmpls, err := createSMTPTemplates(form)
 	if err != nil {
 		return nil, err
@@ -206,22 +214,65 @@ func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) {
 		}
 
 		// TODO: Remove this.
-		slog.DebugContext(
-			r.Context(),
-			"received form payload",
-			"path",
-			r.URL.Path,
-			"site",
-			site.ID,
-			"form",
-			form.ID,
-			"payload",
-			payload,
-		)
+		// slog.DebugContext(
+		// 	r.Context(),
+		// 	"received form payload",
+		// 	"path",
+		// 	r.URL.Path,
+		// 	"site",
+		// 	site.ID,
+		// 	"form",
+		// 	form.ID,
+		// 	"payload",
+		// 	payload,
+		// )
 
 		err = validatePayload(form, payload)
-		if err != nil {
-			var payloadErr *payloadError
+		if err != nil { //nolint:nestif // TODO: clean up
+			var (
+				honeypotErr *honeypotError
+				payloadErr  *payloadError
+			)
+
+			if errors.As(err, &honeypotErr) {
+				slog.WarnContext(
+					r.Context(),
+					"request contained the honeypot field",
+					"path",
+					r.URL.Path,
+					"site",
+					site.ID,
+					"form",
+					form.ID,
+					"err",
+					honeypotErr.Error(),
+				)
+
+				// Show the request as a success to not tip off bots.
+				w.WriteHeader(http.StatusResetContent)
+
+				_, err = w.Write([]byte("accepted"))
+				if err != nil {
+					slog.ErrorContext(
+						r.Context(),
+						"failed write response",
+						"path",
+						r.URL.Path,
+						"site",
+						site.ID,
+						"form",
+						form.ID,
+						"err",
+						err.Error(),
+					)
+					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+
+					return
+				}
+
+				return
+			}
+
 			if errors.As(err, &payloadErr) {
 				slog.WarnContext(
 					r.Context(),
@@ -276,7 +327,7 @@ func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusResetContent)
 
 		_, err = w.Write([]byte("accepted"))
 		if err != nil {
@@ -303,12 +354,26 @@ func SubmitForm(site *config.Site, form *config.Form) (http.Handler, error) {
 func validatePayload(form *config.Form, payload map[string]any) error {
 	seenKeys := map[string]struct{}{}
 
-	for k, v := range payload {
+	for k, v := range payload { //nolint:varnamelen // standard naming
 		seenKeys[k] = struct{}{}
 
 		cfg, ok := form.Fields[k]
 		if !ok {
 			return &payloadError{field: k, message: fmt.Sprintf("unknown field %q", k)}
+		}
+
+		if k == form.HoneypotField {
+			s, ok := v.(string)
+			if !ok {
+				return &payloadError{
+					field:   k,
+					message: fmt.Sprintf("field %q has invalid type %T, expected %s", k, v, cfg.Type.String()),
+				}
+			}
+
+			if s != "" {
+				return &honeypotError{message: fmt.Sprintf("honeypot field %q was set", k)}
+			}
 		}
 
 		switch v.(type) {

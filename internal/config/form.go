@@ -17,6 +17,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -49,6 +50,7 @@ type FormFieldType int //nolint:recvcheck // no need to have pointer receiver fo
 type Form struct {
 	ID                  string               `json:"id"`
 	Token               string               `json:"token"`
+	HoneypotField       string               `json:"honeypotField"`
 	Fields              map[string]FormField `json:"fields"`
 	SESNotifiers        []*SESNotifier       `json:"ses"`
 	ContentType         FormContentType      `json:"contentType"`
@@ -177,6 +179,14 @@ func (f *Form) validate() error {
 		return fmt.Errorf("%w: accessControlMaxAge must be at least 0", errConfig)
 	}
 
+	if f.HoneypotField != "" {
+		if _, ok := f.Fields[f.HoneypotField]; ok {
+			return fmt.Errorf("%w: honeypot field is specified manually as a full form field", errConfig)
+		}
+
+		f.Fields[f.HoneypotField] = FormField{Type: FormFieldString} //nolint:exhaustruct // use defaults
+	}
+
 	for _, field := range f.Fields {
 		if field.Min < 0 {
 			return fmt.Errorf("%w: min field length must be greater than zero", errConfig)
@@ -215,6 +225,14 @@ func (f *Form) validateSMTPNotifiers() error {
 
 		if smtp.Region == "" {
 			return fmt.Errorf("%w: empty SES region", errConfig)
+		}
+
+		if f.HoneypotField != "" {
+			if slices.Contains(smtp.HiddenFields, f.HoneypotField) {
+				return fmt.Errorf("%w: honeypot field is specified manually as a hidden field", errConfig)
+			}
+
+			smtp.HiddenFields = append(smtp.HiddenFields, f.HoneypotField)
 		}
 
 		err := f.validateSMTPNotifierFields(smtp)
