@@ -139,7 +139,7 @@ build: FORCE
 					;; \
 				*) \
 					revision="$${revision%-dirty}"; \
-					build_time="$$(git show -s --date=format:%Y%m%d%H%M%S --format=%cd "$${revision}" 2>/dev/null)"; \
+					build_time="$$(TZ=UTC0 git show -s --date=format-local:%Y%m%d%H%M%S --format=%cd "$${revision}" 2>/dev/null)"; \
 					;; \
 			esac; \
 			version="$(BIFROST_VERSION)-dev.$${build_time}+$${revision}"; \
