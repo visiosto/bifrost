@@ -15,7 +15,8 @@
 .POSIX:
 .SUFFIXES:
 
-VERSION = 0.1.0
+VERSION =
+BIFROST_VERSION = 0.1.0
 
 GOFLAGS =
 
@@ -67,76 +68,82 @@ tidy: FORCE bin/addlicense bin/gci bin/gofumpt bin/golines
 	./bin/gofumpt -extra -l -w .
 
 build: FORCE
-	@version=""; \
+	@version="$(VERSION)"; \
 	revision=""; \
 	\
-	if git describe --match 'v*.*.*' --tags >/dev/null 2>&1; then \
-		untrimmed="$$(git describe --match 'v*.*.*' --tags 2>/dev/null)"; \
-		git_describe="$$(echo "$${untrimmed}" | tr -d ' \n\r')"; \
-		hyphens="$$(printf '%s' "$${git_describe}" | tr -dc '-' | wc -c)"; \
-		\
-		if [ "$${hyphens}" -eq 0 ]; then \
-			if [ "$${git_describe}" != "$(VERSION)" ]; then \
-				echo "git tag does not match the version number" >&2; \
-				exit 1; \
-			fi; \
+	if [ -n "$${version}" ]; then \
+		untrimmed="$$(git describe --always --abbrev=40 --dirty 2>/dev/null)"; \
+		revision="$$(echo "$${untrimmed}" | tr -d ' \n\r')"; \
+		revision="$${revision%-dirty}"; \
+	else \
+		if git describe --match 'v*.*.*' --tags >/dev/null 2>&1; then \
+			untrimmed="$$(git describe --match 'v*.*.*' --tags 2>/dev/null)"; \
+			git_describe="$$(echo "$${untrimmed}" | tr -d ' \n\r')"; \
+			hyphens="$$(printf '%s' "$${git_describe}" | tr -dc '-' | wc -c)"; \
 			\
-			untrimmed_revision="$$(git rev-parse "$(VERSION)^{commit}" 2>/dev/null)"; \
-			revision="$$(echo "$${untrimmed_revision}" | tr -d ' \n\r')"; \
-			version="$(VERSION)"; \
-		else \
-			if [ "$${hyphens}" -eq 2 ]; then \
-				old_ifs="$$IFS"; \
-				IFS="-"; \
-				\
-				set -- $${git_describe}; \
-				\
-				tagged_ancestor="$$1"; \
-				commit_height="$$2"; \
-				commit_id="$$3"; \
-				IFS="$${old_ifs}"; \
-				\
-				if [ "$(VERSION)" = "$${tagged_ancestor}" ]; then \
-					echo "version number in the Makefile \"$(VERSION)\" must be greater than tagged version \"$${tagged_ancestor}\"" >&2; \
+			if [ "$${hyphens}" -eq 0 ]; then \
+				if [ "$${git_describe}" != "v$(BIFROST_VERSION)" ]; then \
+					echo "git tag does not match the version number" >&2; \
 					exit 1; \
 				fi; \
 				\
-				if [ -z "$${commit_id}" ]; then \
+				untrimmed_revision="$$(git rev-parse "v$(BIFROST_VERSION)^{commit}" 2>/dev/null)"; \
+				revision="$$(echo "$${untrimmed_revision}" | tr -d ' \n\r')"; \
+				version="$(BIFROST_VERSION)"; \
+			else \
+				if [ "$${hyphens}" -eq 2 ]; then \
+					old_ifs="$$IFS"; \
+					IFS="-"; \
+					\
+					set -- $${git_describe}; \
+					\
+					tagged_ancestor="$$1"; \
+					commit_height="$$2"; \
+					commit_id="$$3"; \
+					IFS="$${old_ifs}"; \
+					\
+					if [ "$(BIFROST_VERSION)" = "$${tagged_ancestor}" ]; then \
+						echo "version number in the Makefile \"$(BIFROST_VERSION)\" must be greater than tagged version \"$${tagged_ancestor}\"" >&2; \
+						exit 1; \
+					fi; \
+					\
+					if [ -z "$${commit_id}" ]; then \
+						echo "unexpected \`git describe\` output: $${git_describe}" >&2; \
+						exit 1; \
+					fi; \
+					\
+					case "$${commit_id}" in \
+						g*) \
+							revision="$$(printf '%s' "$${commit_id#g}" | tr -d ' \n\r')"; \
+							;; \
+						*) \
+							echo "unexpected \`git describe\` output: $${git_describe}" >&2; \
+							exit 1; \
+							;; \
+					esac; \
+					\
+					version="$(BIFROST_VERSION)-dev.$${commit_height}+$${revision}"; \
+				else \
 					echo "unexpected \`git describe\` output: $${git_describe}" >&2; \
 					exit 1; \
 				fi; \
-				\
-				case "$${commit_id}" in \
-					g*) \
-						revision="$$(printf '%s' "$${commit_id#g}" | tr -d ' \n\r')"; \
-						;; \
-					*) \
-						echo "unexpected \`git describe\` output: $${git_describe}" >&2; \
-						exit 1; \
-						;; \
-				esac; \
-				\
-				version="$(VERSION)-dev.$${commit_height}+$${revision}"; \
-			else \
-				echo "unexpected \`git describe\` output: $${git_describe}" >&2; \
-				exit 1; \
 			fi; \
+		else \
+			untrimmed="$$(git describe --always --abbrev=40 --dirty 2>/dev/null)"; \
+			revision="$$(echo "$${untrimmed}" | tr -d ' \n\r')"; \
+			\
+			case "$${revision}" in \
+				*-dirty) \
+					revision="$${revision%-dirty}"; \
+					build_time="$$(date -u +%Y%m%d%H%M%S)"; \
+					;; \
+				*) \
+					revision="$${revision%-dirty}"; \
+					build_time="$$(git show -s --date=format:%Y%m%d%H%M%S --format=%cd "$${revision}" 2>/dev/null)"; \
+					;; \
+			esac; \
+			version="$(BIFROST_VERSION)-dev.$${build_time}+$${revision}"; \
 		fi; \
-	else \
-		untrimmed="$$(git describe --always --abbrev=40 --dirty 2>/dev/null)"; \
-		revision="$$(echo "$${untrimmed}" | tr -d ' \n\r')"; \
-		\
-		case "$${revision}" in \
-			*-dirty) \
-				revision="$${revision%-dirty}"; \
-				build_time="$$(date -u +%Y%m%d%H%M%S)"; \
-				;; \
-			*) \
-				revision="$${revision%-dirty}"; \
-				build_time="$$(git show -s --date=format:%Y%m%d%H%M%S --format=%cd "$${revision}" 2>/dev/null)"; \
-				;; \
-		esac; \
-		version="$(VERSION)-dev.$${build_time}+$${revision}"; \
 	fi; \
 	\
 	if [ -z "$${version}" ]; then \

@@ -59,7 +59,19 @@ jobs:
       - uses: actions/setup-go@v6.1.0
         with:
           go-version-file: go.mod
-      - run: make build GOFLAGS="-v"
+      - run: |
+          BIFROST_VERSION="$(grep '^BIFROST_VERSION' Makefile | cut -d '=' -f2 | xargs)"
+          BASE_VERSION="${BIFROST_VERSION}-canary.${{ github.run_number }}"
+          VERSION="${BASE_VERSION}+${{ github.sha }}.$(date -u +"%Y%m%d%H%M%S")"
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "ARTIFACT_NAME=bifrost-${BASE_VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}" >> "${GITHUB_ENV}"
+      - run: make build GOFLAGS="-v" VERSION="${{ env.VERSION }}"
+      - uses: actions/upload-artifact@v4.6.2
+        if: ${{ github.ref == 'refs/heads/main' }}
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: bifrost
+          if-no-files-found: error
 
   test:
     runs-on: ${{ matrix.os }}
