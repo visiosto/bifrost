@@ -108,7 +108,7 @@ jobs:
           echo "ARTIFACT_NAME=bifrost-${BASE_VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}" >> "${GITHUB_ENV}"
           echo "BUILD_OUTPUT=bifrost$(go env GOEXE)" >> "${GITHUB_ENV}"
       - run: make build GOFLAGS="-v" VERSION="${{ env.VERSION }}"
-      - uses: actions/upload-artifact@v4.6.2
+      - uses: actions/upload-artifact@v6.0.0
         if: ${{ github.ref == 'refs/heads/main' }}
         with:
           name: ${{ env.ARTIFACT_NAME }}
