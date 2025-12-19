@@ -59,19 +59,7 @@ jobs:
       - uses: actions/setup-go@v6.1.0
         with:
           go-version-file: go.mod
-      - run: |
-          BIFROST_VERSION="$(grep '^BIFROST_VERSION' Makefile | cut -d '=' -f2 | xargs)"
-          BASE_VERSION="${BIFROST_VERSION}-canary.${{ github.run_number }}"
-          VERSION="${BASE_VERSION}+${{ github.sha }}.$(date -u +"%Y%m%d%H%M%S")"
-          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
-          echo "ARTIFACT_NAME=bifrost-${BASE_VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}" >> "${GITHUB_ENV}"
-      - run: make build GOFLAGS="-v" VERSION="${{ env.VERSION }}"
-      - uses: actions/upload-artifact@v4.6.2
-        if: ${{ github.ref == 'refs/heads/main' }}
-        with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: bifrost
-          if-no-files-found: error
+      - run: make build GOFLAGS="-v"
 
   test:
     runs-on: ${{ matrix.os }}
@@ -92,3 +80,36 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make test GOFLAGS="-v"
+
+  package:
+    runs-on: ${{ matrix.os }}
+    needs: [build, lint, test]
+    strategy:
+      matrix:
+        include:
+          - { goos: "linux", goarch: "amd64", os: "ubuntu-22.04" }
+          - { goos: "linux", goarch: "arm64", os: "ubuntu-22.04-arm" }
+          - { goos: "darwin", goarch: "amd64", os: "macos-15-intel" }
+          - { goos: "darwin", goarch: "arm64", os: "macos-14" }
+          - { goos: "windows", goarch: "amd64", os: "windows-2022" }
+          - { goos: "windows", goarch: "arm64", os: "windows-11-arm" }
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v6.0.1
+      - uses: actions/setup-go@v6.1.0
+        with:
+          go-version-file: go.mod
+      - run: |
+          BIFROST_VERSION="$(grep '^BIFROST_VERSION' Makefile | cut -d '=' -f2 | xargs)"
+          BASE_VERSION="${BIFROST_VERSION}-canary.${{ github.run_number }}"
+          VERSION="${BASE_VERSION}+${{ github.sha }}.$(date -u +"%Y%m%d%H%M%S")"
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "ARTIFACT_NAME=bifrost-${BASE_VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}" >> "${GITHUB_ENV}"
+          echo "BUILD_OUTPUT=bifrost$(go env GOEXE)" >> "${GITHUB_ENV}"
+      - run: make build GOFLAGS="-v" VERSION="${{ env.VERSION }}"
+      - uses: actions/upload-artifact@v4.6.2
+        if: ${{ github.ref == 'refs/heads/main' }}
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.BUILD_OUTPUT }}
+          if-no-files-found: error
