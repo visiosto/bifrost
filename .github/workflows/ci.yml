@@ -99,7 +99,8 @@ jobs:
       - uses: actions/setup-go@v6.1.0
         with:
           go-version-file: go.mod
-      - run: |
+      - shell: bash
+        run: |
           BIFROST_VERSION="$(grep '^BIFROST_VERSION' Makefile | cut -d '=' -f2 | xargs)"
           BASE_VERSION="${BIFROST_VERSION}-canary.${{ github.run_number }}"
           VERSION="${BASE_VERSION}+${{ github.sha }}.$(date -u +"%Y%m%d%H%M%S")"
