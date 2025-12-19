@@ -26,7 +26,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -35,19 +34,12 @@ import (
 	"github.com/visiosto/bifrost/internal/version"
 )
 
-//go:embed VERSION
-var versionFile string
-
-func init() { //nolint:gochecknoinits // initializes the version information
-	version.Init(strings.Trim(versionFile, " \t\n"))
-}
-
 func main() {
 	ctx := context.Background()
 
 	if len(os.Args) > 1 {
 		if os.Args[1] == "version" {
-			_, err := fmt.Fprintf(os.Stdout, "bifrost version %s\n", version.Version())
+			_, err := fmt.Fprintf(os.Stdout, "bifrost version %s\n", version.Version.ComparableString())
 			if err != nil {
 				log.Fatal(err)
 			}
