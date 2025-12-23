@@ -76,8 +76,8 @@ build: FORCE
 		revision="$$(echo "$${untrimmed}" | tr -d ' \n\r')"; \
 		revision="$${revision%-dirty}"; \
 	else \
-		if git describe --match 'v*.*.*' --tags >/dev/null 2>&1; then \
-			untrimmed="$$(git describe --match 'v*.*.*' --tags 2>/dev/null)"; \
+		if git describe --match 'v*.*.*' --exclude '*-*' --tags >/dev/null 2>&1; then \
+			untrimmed="$$(git describe --match 'v*.*.*' --exclude '*-*' --tags 2>/dev/null)"; \
 			git_describe="$$(echo "$${untrimmed}" | tr -d ' \n\r')"; \
 			hyphens="$$(printf '%s' "$${git_describe}" | tr -dc '-' | wc -c)"; \
 			\
