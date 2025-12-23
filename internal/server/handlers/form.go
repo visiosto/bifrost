@@ -57,15 +57,18 @@ const htmlTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional/
 	{{if (gt (len .order) 0) -}}
 		{{range $key := .order -}}
 			{{$field := index $fields $key -}}
-			<h2>{{if (eq $field.DisplayName "")}}{{$key}}{{else}}{{$field.DisplayName}}{{end}}</h2>
 			{{if (IsObj $key)}}
 				{{$lines := index $objs $key -}}
-				<ul style="font-size: 14px; line-height: 24px; margin: 16px 0">
-					{{range $line := $lines}}
-						<li>{{- $line -}}</li>
-					{{end}}
-				</ul>
+				{{if (gt (len $lines) 0) -}}
+					<h2>{{if (eq $field.DisplayName "")}}{{$key}}{{else}}{{$field.DisplayName}}{{end}}</h2>
+					<ul style="font-size: 14px; line-height: 24px; margin: 16px 0">
+						{{range $line := $lines}}
+							<li>{{- $line -}}</li>
+						{{end}}
+					</ul>
+				{{end -}}
 			{{ else -}}
+				<h2>{{if (eq $field.DisplayName "")}}{{$key}}{{else}}{{$field.DisplayName}}{{end}}</h2>
 				<p style="font-size: 14px; line-height: 24px; margin: 16px 0">
 					{{- index $payload $key -}}
 				</p>
@@ -102,34 +105,36 @@ const textTemplate = `{{- if (ne .intro "") -}}{{.intro}}{{- end}}
 {{$payload := .payload -}}
 {{$hidden := .hidden -}}
 {{if (gt (len .order) 0) -}}
-{{range $key := .order -}}
-{{$field := index $fields $key -}}
-{{if (IsObj $key)}}
-{{$lines := index $objs $key -}}
-{{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}:
-{{range $line := $lines}}
-  - {{$line -}}
-{{end}}
-{{ else -}}
-{{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}: {{index $payload $key}}
-{{end -}}
-{{end -}}
+	{{range $key := .order -}}
+		{{$field := index $fields $key -}}
+		{{if (IsObj $key)}}
+			{{$lines := index $objs $key -}}
+			{{if (gt (len $lines) 0) -}}
+				{{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}:
+				{{range $line := $lines}}
+				  - {{$line -}}
+				{{end}}
+			{{end -}}
+		{{ else -}}
+			{{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}: {{index $payload $key}}
+		{{end -}}
+	{{end -}}
 {{else -}}
-{{range $key, $value := $payload -}}
-{{$hide := false -}}
-{{range $k := $hidden -}}{{if (eq $k $key) -}}{{$hide = true -}}{{end -}}{{end -}}
-{{if $hide -}}{{continue -}}{{end -}}
-{{$field := index $fields $key -}}
-{{if (IsObj $key)}}
-{{$lines := index $objs $key -}}
-{{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}:
-{{range $line := $lines}}
-  - {{$line -}}
-{{end}}
-{{ else -}}
-{{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}: {{$value}}
-{{end -}}
-{{end -}}
+	{{range $key, $value := $payload -}}
+		{{$hide := false -}}
+		{{range $k := $hidden -}}{{if (eq $k $key) -}}{{$hide = true -}}{{end -}}{{end -}}
+		{{if $hide -}}{{continue -}}{{end -}}
+		{{$field := index $fields $key -}}
+		{{if (IsObj $key)}}
+			{{$lines := index $objs $key -}}
+			{{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}:
+			{{range $line := $lines}}
+			  - {{$line -}}
+			{{end}}
+		{{ else -}}
+			{{if (eq $field.DisplayName "") -}}{{$key}}{{else -}}{{$field.DisplayName}}{{end}}: {{$value}}
+		{{end -}}
+	{{end -}}
 {{end}}
 `
 
@@ -633,7 +638,14 @@ func createSMTPTemplates(form *config.Form) ([]sesTemplate, error) {
 			return nil, fmt.Errorf("failed to parse HTML template: %w", err)
 		}
 
-		var text *texttemplate.Template
+		var (
+			flatTemplate strings.Builder
+			text         *texttemplate.Template
+		)
+
+		for line := range strings.Lines(textTemplate) {
+			flatTemplate.WriteString(strings.TrimLeft(line, " \t"))
+		}
 
 		text, err = texttemplate.New("text").Funcs(texttemplate.FuncMap{
 			"IsObj": func(name string) bool {
@@ -641,7 +653,7 @@ func createSMTPTemplates(form *config.Form) ([]sesTemplate, error) {
 
 				return ok
 			},
-		}).Parse(textTemplate)
+		}).Parse(flatTemplate.String())
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse text template: %w", err)
 		}
