@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/anttikivi/semver v1.0.0
-	github.com/aws/aws-sdk-go-v2 v1.41.0
+	github.com/aws/aws-sdk-go-v2 v1.41.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.6
 	github.com/aws/aws-sdk-go-v2/service/ses v1.34.17
 )
